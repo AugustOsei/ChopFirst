@@ -190,8 +190,91 @@ input {
   50% { box-shadow: 0 10px 44px rgba(255, 202, 58, .6); }
 }
 
-.title-guide {
+.title-links {
+  display: flex;
+  gap: 22px;
   margin-top: 12px;
+}
+
+.challenge-inbox {
+  display: grid;
+  gap: 5px;
+  width: min(400px, 100%);
+  margin-top: 14px;
+  padding: 9px 11px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 10px;
+  background: rgba(9, 15, 22, .68);
+  backdrop-filter: blur(10px);
+  text-align: left;
+}
+
+.challenge-inbox small {
+  color: #8c9aa8;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.inbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  color: #e8eef4;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.inbox-row:hover .inbox-text {
+  color: #ffd15c;
+}
+
+.inbox-dot {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .25);
+}
+
+.inbox-dot.live {
+  background: #ff3b4e;
+  box-shadow: 0 0 10px rgba(255, 59, 78, .9);
+  animation: wrong-way-flash 1.2s steps(2) infinite;
+}
+
+.inbox-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-text b {
+  color: #ffd15c;
+}
+
+.inbox-meta {
+  flex: 0 0 auto;
+  color: #8c9aa8;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.board-meta {
+  margin: 4px 0 12px;
+  color: #b9c6d8;
+  font-size: 14px;
+}
+
+.board-meta b {
+  color: #ffd15c;
+}
+
+.title-guide {
   border: 0;
   background: none;
   color: #e8eef4;

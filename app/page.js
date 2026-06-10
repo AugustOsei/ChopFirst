@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import RaceGame from "../components/RaceGame";
 import GuideModal from "../components/GuideModal";
 
@@ -37,6 +37,36 @@ function compressPhoto(file) {
 }
 
 const PB_KEY = "chopfirst.pb.akina-ridge";
+const DEVICE_KEY = "chopfirst.device";
+const TRACKED_KEY = "chopfirst.challenges";
+
+function getDeviceId() {
+  let id = localStorage.getItem(DEVICE_KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(DEVICE_KEY, id);
+  }
+  return id;
+}
+
+function loadTracked() {
+  try {
+    const list = JSON.parse(localStorage.getItem(TRACKED_KEY) || "[]");
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveTracked(list) {
+  localStorage.setItem(TRACKED_KEY, JSON.stringify(list.slice(0, 8)));
+}
+
+function upsertTracked(entry) {
+  const list = loadTracked().filter((item) => item.id !== entry.id);
+  list.unshift({ ...entry, at: Date.now() });
+  saveTracked(list);
+}
 
 const CAR_COLORS = [
   { id: "#d81f33", label: "Rosso" },
@@ -56,7 +86,10 @@ export default function Home() {
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState("");
   const [showGuide, setShowGuide] = useState(false);
+  const [showBoard, setShowBoard] = useState(false);
   const [pb, setPb] = useState(null);
+  const [shareMessage, setShareMessage] = useState("");
+  const savePromiseRef = useRef(null);
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("challenge") || "";
@@ -64,7 +97,17 @@ export default function Home() {
     if (id) {
       fetch(`/api/challenges/${id}`)
         .then((res) => (res.ok ? res.json() : null))
-        .then((data) => data && setChallenge(data));
+        .then((data) => {
+          if (!data) return;
+          setChallenge(data);
+          // visiting the link counts as "seen" for the title-screen inbox
+          const list = loadTracked();
+          const entry = list.find((item) => item.id === data.id);
+          if (entry) {
+            entry.lastSeenRuns = data.runs.length;
+            saveTracked(list);
+          }
+        });
     }
     try {
       const saved = JSON.parse(localStorage.getItem("chopfirst.driver") || "null");
@@ -102,32 +145,58 @@ export default function Home() {
     setPb({ isNew, previous: stored?.timeMs ?? null });
     setResult(run);
     setScreen("finish");
-  }
 
-  async function submitRun() {
-    const run = { ...result, message };
-    setStatus("Saving run...");
+    // auto-save so a closed tab can't lose the score; the message is optional and added after
+    const target = challenge?.runs?.[0] ?? null;
+    setStatus("Saving your run…");
     const endpoint = challengeId ? `/api/challenges/${challengeId}/runs` : "/api/challenges";
-    const res = await fetch(endpoint, {
+    savePromiseRef.current = fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(run),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setStatus(data.error || "Could not save this run.");
-      if (data.challenge) setChallenge(data.challenge);
-      return;
+      body: JSON.stringify({ ...run, deviceId: getDeviceId() }),
+    })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) {
+          setStatus(data.error || "Could not save this run.");
+          if (data.challenge) setChallenge(data.challenge);
+          return null;
+        }
+        setChallenge(data);
+        setChallengeId(data.id);
+        window.history.replaceState(null, "", `/?challenge=${data.id}`);
+        upsertTracked({ id: data.id, myTimeMs: run.timeMs, lastSeenRuns: data.runs.length });
+        setShareMessage(buildShareMessage(run, target, data.id));
+        setStatus("Saved to the leaderboard ✓");
+        return data;
+      })
+      .catch(() => {
+        setStatus("Could not save this run — check your connection.");
+        return null;
+      });
+  }
+
+  async function continueToResults() {
+    const saved = savePromiseRef.current ? await savePromiseRef.current : null;
+    if (saved && message.trim()) {
+      try {
+        const res = await fetch(`/api/challenges/${saved.id}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: driver.name || "Street Driver", photo: driver.photo, message: message.trim() }),
+        });
+        if (res.ok) setChallenge(await res.json());
+      } catch {
+        // message is a nice-to-have; don't block the flow
+      }
     }
-    setChallenge(data);
-    setChallengeId(data.id);
-    window.history.replaceState(null, "", `/?challenge=${data.id}`);
-    setScreen("results");
+    setMessage("");
     setStatus("");
+    setScreen(saved || challenge ? "results" : "title");
   }
 
   const shareUrl = typeof window === "undefined" || !challengeId ? "" : `${window.location.origin}/?challenge=${challengeId}`;
-  const shareText = encodeURIComponent(`I set a time on CHOP FIRST. You have 24 hours to chop my time: ${shareUrl}`);
+  const shareText = encodeURIComponent(shareMessage || `I set a time on CHOP FIRST. You have 24 hours to chop my time: ${shareUrl}`);
 
   return (
     <main className="app-shell">
@@ -139,7 +208,13 @@ export default function Home() {
         )}
 
         {screen === "title" && (
-          <TitleScreen challenge={challenge} onStart={() => setScreen("setup")} onGuide={() => setShowGuide(true)} guideOpen={showGuide} />
+          <TitleScreen
+            challenge={challenge}
+            onStart={() => setScreen("setup")}
+            onGuide={() => setShowGuide(true)}
+            onBoard={() => setShowBoard(true)}
+            overlayOpen={showGuide || showBoard}
+          />
         )}
 
         {screen === "setup" && (
@@ -208,7 +283,7 @@ export default function Home() {
                 </button>
               ))}
             </div>
-            <button className="primary" onClick={submitRun}>Save and share</button>
+            <button className="primary" onClick={continueToResults}>Continue to leaderboard</button>
             {status && <p className="status">{status}</p>}
           </Panel>
         )}
@@ -228,8 +303,100 @@ export default function Home() {
         )}
 
         {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
+        {showBoard && <GlobalBoard onClose={() => setShowBoard(false)} />}
       </section>
     </main>
+  );
+}
+
+function GlobalBoard({ onClose }) {
+  const [board, setBoard] = useState(null);
+  useEffect(() => {
+    fetch("/api/leaderboard")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setBoard(data || { top: [], totalRuns: 0, totalPlayers: 0 }))
+      .catch(() => setBoard({ top: [], totalRuns: 0, totalPlayers: 0 }));
+  }, []);
+  return (
+    <div className="guide-overlay" onClick={onClose}>
+      <div className="guide-card" onClick={(event) => event.stopPropagation()}>
+        <button className="guide-close" aria-label="Close leaderboard" onClick={onClose}>×</button>
+        <p className="eyebrow">All-time</p>
+        <h2 className="guide-title">Global leaderboard</h2>
+        {!board ? (
+          <p className="guide-lede">Loading…</p>
+        ) : (
+          <>
+            <p className="board-meta">
+              <b>{board.totalRuns}</b> run{board.totalRuns === 1 ? "" : "s"} by <b>{board.totalPlayers}</b> driver{board.totalPlayers === 1 ? "" : "s"}
+            </p>
+            {board.top.length === 0 ? (
+              <p className="guide-lede">No times yet — set the first one.</p>
+            ) : (
+              <ol className="leaderboard">
+                {board.top.map((player, index) => (
+                  <li key={`${player.name}-${index}`}>
+                    {player.photo ? <img src={player.photo} alt="" /> : <span className="avatar">{(player.name || "?").slice(0, 1).toUpperCase()}</span>}
+                    <strong>{index + 1}. {player.name}</strong>
+                    <span>{formatTime(player.timeMs)}</span>
+                    <small>{player.coins} coins · {player.driftScore} drift</small>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChallengeInbox() {
+  const [items, setItems] = useState(null);
+  useEffect(() => {
+    const tracked = loadTracked().slice(0, 3);
+    if (!tracked.length) return;
+    Promise.all(
+      tracked.map(async (entry) => {
+        try {
+          const res = await fetch(`/api/challenges/${entry.id}`);
+          if (!res.ok) return null;
+          const data = await res.json();
+          const leader = data.runs[0];
+          if (!leader) return null;
+          return {
+            id: entry.id,
+            leader,
+            myTimeMs: entry.myTimeMs,
+            newRuns: Math.max(0, data.runs.length - (entry.lastSeenRuns || 0)),
+            chopped: entry.myTimeMs != null && leader.timeMs < entry.myTimeMs,
+            runCount: data.runs.length,
+            expired: data.expired,
+          };
+        } catch {
+          return null;
+        }
+      }),
+    ).then((results) => setItems(results.filter(Boolean)));
+  }, []);
+
+  if (!items?.length) return null;
+  return (
+    <div className="challenge-inbox title-fade" style={{ animationDelay: ".95s" }}>
+      <small>Your challenges</small>
+      {items.map((item) => (
+        <a key={item.id} className="inbox-row" href={`/?challenge=${item.id}`}>
+          <span className={`inbox-dot${item.newRuns > 0 ? " live" : ""}`} />
+          <span className="inbox-text">
+            {item.chopped
+              ? `${item.leader.name} chopped you by ${formatGap(item.myTimeMs - item.leader.timeMs)}`
+              : `You lead at ${formatTime(item.myTimeMs)}`}
+            {item.newRuns > 0 && <b> · {item.newRuns} new run{item.newRuns > 1 ? "s" : ""}</b>}
+          </span>
+          <span className="inbox-meta">{item.expired ? "ended" : `${item.runCount} run${item.runCount === 1 ? "" : "s"}`}</span>
+        </a>
+      ))}
+    </div>
   );
 }
 
@@ -254,6 +421,18 @@ function ChallengeCountdown({ expiresAt }) {
 
 function formatGap(ms) {
   return `${(Math.abs(ms) / 1000).toFixed(2)}s`;
+}
+
+function buildShareMessage(run, target, id) {
+  const url = `${window.location.origin}/?challenge=${id}`;
+  if (!target) {
+    return `I set a time on CHOP FIRST — ${formatTime(run.timeMs)}. You have 24 hours to chop it: ${url}`;
+  }
+  const delta = run.timeMs - target.timeMs;
+  if (delta < 0) {
+    return `🪓 CHOPPED! I beat ${target.name}'s ${formatTime(target.timeMs)} with ${formatTime(run.timeMs)} on CHOP FIRST. Your move: ${url}`;
+  }
+  return `I ran ${formatTime(run.timeMs)} on ${target.name}'s CHOP FIRST challenge — still ${formatGap(delta)} behind. Think you can chop it? ${url}`;
 }
 
 function FinishVerdict({ result, challenge, pb }) {
@@ -286,7 +465,7 @@ function FinishVerdict({ result, challenge, pb }) {
   );
 }
 
-function TitleScreen({ challenge, onStart, onGuide, guideOpen }) {
+function TitleScreen({ challenge, onStart, onGuide, onBoard, overlayOpen }) {
   const [bestTime, setBestTime] = useState(null);
   useEffect(() => {
     try {
@@ -298,12 +477,12 @@ function TitleScreen({ challenge, onStart, onGuide, guideOpen }) {
   }, []);
   useEffect(() => {
     const onKey = (event) => {
-      if (guideOpen) return;
+      if (overlayOpen) return;
       if (event.key === "Enter" || event.key === " ") onStart();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onStart, guideOpen]);
+  }, [onStart, overlayOpen]);
 
   return (
     <div className="title-screen">
@@ -329,12 +508,14 @@ function TitleScreen({ challenge, onStart, onGuide, guideOpen }) {
             </p>
           )
         )}
+        <ChallengeInbox />
         <button className="primary title-start title-fade" style={{ animationDelay: "1s" }} onClick={onStart}>
           START
         </button>
-        <button className="title-guide title-fade" style={{ animationDelay: "1.15s" }} onClick={onGuide}>
-          How to play
-        </button>
+        <div className="title-links title-fade" style={{ animationDelay: "1.15s" }}>
+          <button className="title-guide" onClick={onGuide}>How to play</button>
+          <button className="title-guide" onClick={onBoard}>🏆 Global leaderboard</button>
+        </div>
       </div>
       <footer className="title-credits title-fade" style={{ animationDelay: "1.3s" }}>
         <a href="https://www.augustwheel.com" target="_blank" rel="noopener noreferrer">augustwheel.com</a>
