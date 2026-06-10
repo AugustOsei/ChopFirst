@@ -4,7 +4,12 @@ import { addRun } from "../../../../../lib/challenges";
 export async function POST(request, { params }) {
   const { id } = await params;
   const body = await request.json();
-  const result = await addRun(id, body);
+  let result;
+  try {
+    result = await addRun(id, body);
+  } catch (error) {
+    return NextResponse.json({ error: `Storage error: ${error.message}` }, { status: 500 });
+  }
   if (result.error === "missing") {
     return NextResponse.json({ error: "Challenge not found" }, { status: 404 });
   }
