@@ -1,0 +1,20 @@
+# dependencies / build
+node_modules/
+.next/
+out/
+.vercel/
+
+# local game data (challenge runs, photos, messages)
+data/
+
+# local tooling
+.claude/
+.qa-sim/
+
+# env
+.env
+.env.*
+
+# misc
+.DS_Store
+*.log
