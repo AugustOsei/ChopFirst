@@ -277,7 +277,24 @@ Known browser warning:
 
 ### Remaining limitations
 
-- Track layout still needs the named-sections design pass (Phase D); the first hairpin is brutal at full speed.
 - Head-on rail hits at speed shed most velocity by design; escape assist + reverse handles recovery.
-- Ghost cars are still translucent boxes; no sound; skid marks are short-lived quads, not persistent trails.
+- Skid marks are short-lived quads, not persistent trails.
+
+### 2026-06-10 round 2 (same day, later session)
+
+- Steering chirality bug fixed: the right key had mapped to +yaw, which is screen-LEFT
+  for the chase camera. Input mapping flipped; headless sims check sign symmetry only,
+  so visual direction must be verified in-browser (right key must increase `car.lateral`).
+- Track rebuilt from named sections (`game/track.js`): start straight, easy right,
+  medium left, approach straight, summit hairpin (~9 m radius, intentional), S-chicane,
+  recovery straight, final sweeper. ~1330 m, zero self-intersections, bot laps in 44 s.
+- Added: live SVG minimap, wrong-way warning, challenge expiry countdown, post-race
+  message prompt chips, ghost car shells (tinted car mesh), road-message popups with
+  author photos, driver HUD chip, paint picker, localStorage driver persistence,
+  synthesized WebAudio (engine/drift/boost/coin/impact) with mute, pause menu,
+  guide modal, AI key-art onboarding backdrop (`public/cover.jpg`), clouds,
+  car detail pass (stripes/mirrors/fastback/grille/arches).
+- Storage adapter in `lib/challenges.js`: Upstash/Vercel KV REST env vars in
+  production, local file otherwise.
+- Repo public at https://github.com/AugustOsei/ChopFirst.
 
