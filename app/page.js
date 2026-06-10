@@ -46,7 +46,7 @@ const CAR_COLORS = [
 ];
 
 export default function Home() {
-  const [screen, setScreen] = useState("onboard");
+  const [screen, setScreen] = useState("title");
   const [driver, setDriver] = useState({ name: "", photo: "", color: CAR_COLORS[0].id });
   const [challengeId, setChallengeId] = useState("");
   const [challenge, setChallenge] = useState(null);
@@ -121,28 +121,19 @@ export default function Home() {
     <main className="app-shell">
       <section className="game-stage">
         {screen === "race" ? (
-          <RaceGame driver={driver} challenge={challenge} onFinish={finishRace} onQuit={() => setScreen("onboard")} />
+          <RaceGame driver={driver} challenge={challenge} onFinish={finishRace} onQuit={() => setScreen("title")} />
         ) : (
-          <IntroBackdrop />
+          <IntroBackdrop variant={screen === "title" ? "title" : "panel"} />
         )}
 
-        {screen === "onboard" && (
+        {screen === "title" && (
+          <TitleScreen challenge={challenge} onStart={() => setScreen("setup")} onGuide={() => setShowGuide(true)} guideOpen={showGuide} />
+        )}
+
+        {screen === "setup" && (
           <Panel>
-            <div className="brand">
-              <p className="eyebrow">24-hour touge time attack</p>
-              <div className="brand-logo" aria-label="CHOP FIRST">
-                <span className="brand-chop">CHOP</span>
-                <span className="brand-first">FIRST</span>
-              </div>
-              <div className="brand-strip" aria-hidden />
-            </div>
-            <p className="lede">Three laps down the ridge. Set a time, then send the link — your friends have 24 hours to chop it.</p>
-            {challenge && (
-              <p className="challenge-pill">
-                Challenge loaded — beat {formatTime(challenge.runs[0]?.timeMs)} by {challenge.runs[0]?.name || "a rival"}
-                <ChallengeCountdown expiresAt={challenge.expiresAt} />
-              </p>
-            )}
+            <p className="eyebrow">Driver setup</p>
+            <h2 className="setup-title">Ready to run?</h2>
             {challenge?.messages?.length > 0 && (
               <div className="road-notes">
                 <small>Notes left on the road</small>
@@ -180,11 +171,7 @@ export default function Home() {
               </div>
             </div>
             <button className="primary" onClick={startRace}>Start 3 laps</button>
-            <button className="ghost-button" onClick={() => setShowGuide(true)}>How to play</button>
-            <footer className="credits">
-              <a href="https://www.augustwheel.com" target="_blank" rel="noopener noreferrer">augustwheel.com</a>
-              <span>by <a href="https://www.linkedin.com/in/augustineosei/" target="_blank" rel="noopener noreferrer">Augustine Osei</a></span>
-            </footer>
+            <button className="ghost-button back-button" onClick={() => setScreen("title")}>‹ Back</button>
           </Panel>
         )}
 
@@ -252,11 +239,55 @@ function ChallengeCountdown({ expiresAt }) {
   return <span className="countdown">{hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`} left to chop it</span>;
 }
 
-function IntroBackdrop() {
+function TitleScreen({ challenge, onStart, onGuide, guideOpen }) {
+  useEffect(() => {
+    const onKey = (event) => {
+      if (guideOpen) return;
+      if (event.key === "Enter" || event.key === " ") onStart();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onStart, guideOpen]);
+
+  return (
+    <div className="title-screen">
+      <div className="title-center">
+        <p className="eyebrow title-fade" style={{ animationDelay: ".55s" }}>24-hour touge time attack</p>
+        <div className="brand-logo title-logo" aria-label="CHOP FIRST">
+          <span className="brand-chop logo-pop">CHOP</span>
+          <span className="brand-first logo-pop" style={{ animationDelay: ".14s" }}>FIRST</span>
+        </div>
+        <div className="brand-strip title-strip" aria-hidden />
+        <p className="title-tagline title-fade" style={{ animationDelay: ".7s" }}>
+          Set a time. Send the link. They get 24 hours to chop it.
+        </p>
+        {challenge && (
+          <p className="challenge-pill title-pill title-fade" style={{ animationDelay: ".85s" }}>
+            Beat {formatTime(challenge.runs[0]?.timeMs)} by {challenge.runs[0]?.name || "a rival"}
+            <ChallengeCountdown expiresAt={challenge.expiresAt} />
+          </p>
+        )}
+        <button className="primary title-start title-fade" style={{ animationDelay: "1s" }} onClick={onStart}>
+          START
+        </button>
+        <button className="title-guide title-fade" style={{ animationDelay: "1.15s" }} onClick={onGuide}>
+          How to play
+        </button>
+      </div>
+      <footer className="title-credits title-fade" style={{ animationDelay: "1.3s" }}>
+        <a href="https://www.augustwheel.com" target="_blank" rel="noopener noreferrer">augustwheel.com</a>
+        <span>·</span>
+        <span>by <a href="https://www.linkedin.com/in/augustineosei/" target="_blank" rel="noopener noreferrer">Augustine Osei</a></span>
+      </footer>
+    </div>
+  );
+}
+
+function IntroBackdrop({ variant = "panel" }) {
   return (
     <div className="intro-backdrop">
       <img src="/cover.jpg" alt="" className="intro-art" />
-      <div className="intro-scrim" />
+      <div className={`intro-scrim ${variant}`} />
     </div>
   );
 }
