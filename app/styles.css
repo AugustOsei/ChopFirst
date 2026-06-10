@@ -232,6 +232,67 @@ input {
   margin-bottom: 6px;
 }
 
+/* --- finish verdict --- */
+
+.verdict-stack {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 4px;
+}
+
+.verdict {
+  display: grid;
+  gap: 2px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  font-size: 18px;
+  font-weight: 950;
+  font-style: italic;
+  letter-spacing: .06em;
+  animation: verdict-pop .5s cubic-bezier(.2, 1.4, .4, 1) both;
+}
+
+.verdict span {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  opacity: .85;
+}
+
+.verdict.chopped {
+  background: rgba(46, 197, 110, .16);
+  border: 1px solid rgba(46, 197, 110, .55);
+  color: #7df0ae;
+  box-shadow: 0 0 28px rgba(46, 197, 110, .25);
+}
+
+.verdict.missed {
+  background: rgba(255, 92, 80, .12);
+  border: 1px solid rgba(255, 92, 80, .45);
+  color: #ff9d94;
+}
+
+.verdict.pb {
+  background: rgba(255, 202, 58, .14);
+  border: 1px solid rgba(255, 202, 58, .5);
+  color: #ffd98c;
+  box-shadow: 0 0 28px rgba(255, 202, 58, .22);
+  animation-delay: .15s;
+}
+
+@keyframes verdict-pop {
+  0% { opacity: 0; transform: scale(.85); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.pb-line {
+  margin: 0;
+  color: #8c9aa8;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .back-button {
   margin-top: 8px;
 }

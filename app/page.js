@@ -36,6 +36,8 @@ function compressPhoto(file) {
   });
 }
 
+const PB_KEY = "chopfirst.pb.akina-ridge";
+
 const CAR_COLORS = [
   { id: "#d81f33", label: "Rosso" },
   { id: "#2563eb", label: "Bayside Blue" },
@@ -54,6 +56,7 @@ export default function Home() {
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState("");
   const [showGuide, setShowGuide] = useState(false);
+  const [pb, setPb] = useState(null);
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("challenge") || "";
@@ -88,6 +91,15 @@ export default function Home() {
   }
 
   function finishRace(run) {
+    let stored = null;
+    try {
+      stored = JSON.parse(localStorage.getItem(PB_KEY) || "null");
+    } catch {
+      stored = null;
+    }
+    const isNew = !stored || run.timeMs < stored.timeMs;
+    if (isNew) localStorage.setItem(PB_KEY, JSON.stringify({ timeMs: run.timeMs, at: Date.now() }));
+    setPb({ isNew, previous: stored?.timeMs ?? null });
     setResult(run);
     setScreen("finish");
   }
@@ -179,6 +191,7 @@ export default function Home() {
           <Panel>
             <p className="eyebrow">Run complete</p>
             <h2>{formatTime(result.timeMs)}</h2>
+            <FinishVerdict result={result} challenge={challenge} pb={pb} />
             <div className="stats-grid">
               <span>Coins <b>{result.coins}</b></span>
               <span>Drift <b>{result.driftScore}</b></span>
@@ -239,7 +252,50 @@ function ChallengeCountdown({ expiresAt }) {
   return <span className="countdown">{hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`} left to chop it</span>;
 }
 
+function formatGap(ms) {
+  return `${(Math.abs(ms) / 1000).toFixed(2)}s`;
+}
+
+function FinishVerdict({ result, challenge, pb }) {
+  const target = challenge?.runs?.[0];
+  const delta = target ? result.timeMs - target.timeMs : null;
+  return (
+    <div className="verdict-stack">
+      {target && (
+        delta < 0 ? (
+          <div className="verdict chopped">
+            YOU CHOPPED IT
+            <span>−{formatGap(delta)} vs {target.name}</span>
+          </div>
+        ) : (
+          <div className="verdict missed">
+            NOT CHOPPED
+            <span>+{formatGap(delta)} behind {target.name}</span>
+          </div>
+        )
+      )}
+      {pb?.isNew ? (
+        <div className="verdict pb">
+          NEW PERSONAL BEST
+          {pb.previous != null && <span>previous {formatTime(pb.previous)}</span>}
+        </div>
+      ) : (
+        pb?.previous != null && <p className="pb-line">Personal best {formatTime(pb.previous)}</p>
+      )}
+    </div>
+  );
+}
+
 function TitleScreen({ challenge, onStart, onGuide, guideOpen }) {
+  const [bestTime, setBestTime] = useState(null);
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(PB_KEY) || "null");
+      if (stored?.timeMs) setBestTime(stored.timeMs);
+    } catch {
+      // ignore corrupted storage
+    }
+  }, []);
   useEffect(() => {
     const onKey = (event) => {
       if (guideOpen) return;
@@ -261,11 +317,17 @@ function TitleScreen({ challenge, onStart, onGuide, guideOpen }) {
         <p className="title-tagline title-fade" style={{ animationDelay: ".7s" }}>
           Set a time. Send the link. They get 24 hours to chop it.
         </p>
-        {challenge && (
+        {challenge ? (
           <p className="challenge-pill title-pill title-fade" style={{ animationDelay: ".85s" }}>
             Beat {formatTime(challenge.runs[0]?.timeMs)} by {challenge.runs[0]?.name || "a rival"}
             <ChallengeCountdown expiresAt={challenge.expiresAt} />
           </p>
+        ) : (
+          bestTime != null && (
+            <p className="challenge-pill title-pill title-fade" style={{ animationDelay: ".85s" }}>
+              Your best — {formatTime(bestTime)}. Chop it.
+            </p>
+          )
         )}
         <button className="primary title-start title-fade" style={{ animationDelay: "1s" }} onClick={onStart}>
           START
