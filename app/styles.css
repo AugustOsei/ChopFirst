@@ -66,11 +66,25 @@ input {
 .intro-backdrop {
   position: absolute;
   inset: 0;
+  background: linear-gradient(180deg, #8fd7ff 0%, #eaf8ff 48%, #6fa04e 49%, #233822 100%);
+  overflow: hidden;
+}
+
+.intro-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 62% 40%;
+}
+
+.intro-scrim {
+  position: absolute;
+  inset: 0;
   background:
-    linear-gradient(90deg, rgba(12, 18, 22, .78), rgba(12, 18, 22, .22)),
-    linear-gradient(175deg, transparent 0 44%, rgba(48, 105, 74, .95) 45% 54%, transparent 55%),
-    linear-gradient(160deg, transparent 0 36%, rgba(78, 133, 107, .9) 37% 47%, transparent 48%),
-    linear-gradient(180deg, #8fd7ff 0%, #eaf8ff 48%, #6fa04e 49%, #233822 100%);
+    linear-gradient(90deg, rgba(9, 14, 19, .72) 0%, rgba(9, 14, 19, .28) 46%, rgba(9, 14, 19, .05) 70%),
+    linear-gradient(180deg, rgba(9, 14, 19, .25) 0%, transparent 30% 70%, rgba(9, 14, 19, .35) 100%);
 }
 
 .panel {
@@ -284,11 +298,102 @@ input:focus {
   text-shadow: 0 0 14px rgba(255, 206, 74, .8);
 }
 
+.minimap {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  margin-bottom: 7px;
+}
+
+.minimap-road-casing {
+  fill: none;
+  stroke: rgba(255, 255, 255, .14);
+  stroke-width: 5;
+  stroke-linejoin: round;
+}
+
+.minimap-road {
+  fill: none;
+  stroke: #aebdc9;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.minimap-start {
+  fill: #fff;
+  stroke: #14181d;
+  stroke-width: 0.8;
+}
+
+.minimap-car {
+  fill: #ff3b4e;
+  filter: drop-shadow(0 0 4px rgba(255, 59, 78, .9));
+}
+
+.wrong-way {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 22px;
+  border-radius: 10px;
+  background: rgba(190, 18, 32, .92);
+  color: #fff;
+  font-size: clamp(20px, 4vw, 34px);
+  font-weight: 950;
+  font-style: italic;
+  letter-spacing: .1em;
+  box-shadow: 0 0 40px rgba(190, 18, 32, .6);
+  pointer-events: none;
+  animation: wrong-way-flash .6s steps(2) infinite;
+}
+
+@keyframes wrong-way-flash {
+  0% { opacity: 1; }
+  100% { opacity: .35; }
+}
+
+.message-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -6px 0 14px;
+}
+
+.message-prompt {
+  border: 1px solid rgba(255, 209, 92, .3);
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: rgba(255, 209, 92, .08);
+  color: #ffe8a1;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.message-prompt:hover {
+  background: rgba(255, 209, 92, .18);
+}
+
+.challenge-pill .countdown {
+  display: block;
+  margin-top: 3px;
+  color: #ffd15c;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.challenge-pill .countdown.expired {
+  color: #ff8d85;
+}
+
 .progress-map {
   position: absolute;
   top: 14px;
   right: 14px;
-  width: 170px;
+  width: 132px;
   padding: 9px 11px;
   border: 1px solid rgba(255, 255, 255, .12);
   border-radius: 10px;
@@ -1252,11 +1357,11 @@ kbd {
 
   .progress-map {
     top: 112px;
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
-    width: min(320px, calc(100% - 24px));
-    padding: 7px 10px;
+    left: auto;
+    right: 10px;
+    transform: none;
+    width: 92px;
+    padding: 6px 8px;
   }
 
   .vehicle-debug {

@@ -137,7 +137,12 @@ export default function Home() {
               <div className="brand-strip" aria-hidden />
             </div>
             <p className="lede">Three laps down the ridge. Set a time, then send the link — your friends have 24 hours to chop it.</p>
-            {challenge && <p className="challenge-pill">Challenge loaded — beat {formatTime(challenge.runs[0]?.timeMs)} by {challenge.runs[0]?.name || "a rival"}</p>}
+            {challenge && (
+              <p className="challenge-pill">
+                Challenge loaded — beat {formatTime(challenge.runs[0]?.timeMs)} by {challenge.runs[0]?.name || "a rival"}
+                <ChallengeCountdown expiresAt={challenge.expiresAt} />
+              </p>
+            )}
             {challenge?.messages?.length > 0 && (
               <div className="road-notes">
                 <small>Notes left on the road</small>
@@ -196,6 +201,13 @@ export default function Home() {
               Road message for the next drivers
               <input value={message} onChange={(event) => setMessage(event.target.value)} maxLength={100} placeholder="e.g. brake before the ridge hairpin" />
             </label>
+            <div className="message-prompts">
+              {MESSAGE_PROMPTS.map((prompt) => (
+                <button key={prompt} type="button" className="message-prompt" onClick={() => setMessage(prompt)}>
+                  {prompt}
+                </button>
+              ))}
+            </div>
             <button className="primary" onClick={submitRun}>Save and share</button>
             {status && <p className="status">{status}</p>}
           </Panel>
@@ -221,8 +233,32 @@ export default function Home() {
   );
 }
 
+const MESSAGE_PROMPTS = [
+  "Brake hard before the summit hairpin",
+  "Drift the S-bends, trust the rails",
+  "Save a boost for the back straight",
+];
+
+function ChallengeCountdown({ expiresAt }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(tick);
+  }, []);
+  const msLeft = new Date(expiresAt).getTime() - now;
+  if (msLeft <= 0) return <span className="countdown expired">challenge expired</span>;
+  const hours = Math.floor(msLeft / 3600000);
+  const minutes = Math.floor((msLeft % 3600000) / 60000);
+  return <span className="countdown">{hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`} left to chop it</span>;
+}
+
 function IntroBackdrop() {
-  return <div className="intro-backdrop" />;
+  return (
+    <div className="intro-backdrop">
+      <img src="/cover.jpg" alt="" className="intro-art" />
+      <div className="intro-scrim" />
+    </div>
+  );
 }
 
 function Panel({ children, wide }) {

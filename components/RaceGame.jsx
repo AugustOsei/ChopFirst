@@ -15,6 +15,7 @@ import {
   getTrackFrame,
   getTrackLength,
   isPointClearOfRoad,
+  MINIMAP,
   PICKUPS,
   pointAt,
   TRACK,
@@ -37,6 +38,8 @@ const INITIAL_RACE = {
   countdown: 3,
   banner: null,
   roadMessage: null,
+  wrongWay: false,
+  mapPos: null,
   debug: null,
 };
 
@@ -118,7 +121,7 @@ function RaceScene({ inputRef, challenge, driver, onFinish, setRace, showDebug, 
     () => (challenge?.messages || []).filter((note) => note.message).slice(-8),
     [challenge],
   );
-  const flowRef = useRef({ lastLap: 0, banner: null, msgIndex: 0, msg: null });
+  const flowRef = useRef({ lastLap: 0, banner: null, msgIndex: 0, msg: null, wrongWayTime: 0 });
   const smokeRef = useRef(null);
   const sparksRef = useRef(null);
   const skidRef = useRef(null);
@@ -162,6 +165,9 @@ function RaceScene({ inputRef, challenge, driver, onFinish, setRace, showDebug, 
         flow.msgIndex += 1;
       }
     }
+    // wrong-way: sustained driving against the road direction
+    const wrongWay = Math.abs(car.headingError) > 2 && car.forwardSpeed > 3;
+    flow.wrongWayTime = wrongWay ? flow.wrongWayTime + dt : 0;
 
     if (carRef.current) {
       carRef.current.position.copy(transform.position);
@@ -189,6 +195,8 @@ function RaceScene({ inputRef, challenge, driver, onFinish, setRace, showDebug, 
         countdown: countdownRef.current,
         banner: flow.banner && car.timeMs < flow.banner.until ? flow.banner : null,
         roadMessage: flow.msg && car.timeMs < flow.msg.until ? flow.msg : null,
+        wrongWay: flow.wrongWayTime > 0.7,
+        mapPos: MINIMAP.toMap(car.position.x, car.position.z),
         debug: showDebug
           ? {
               speed: car.forwardSpeed,
@@ -383,12 +391,35 @@ function TrackWorld() {
           <meshStandardMaterial color={mountain.color} roughness={1} />
         </mesh>
       ))}
-      <mesh receiveShadow position={[110, -26, -120]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[1400, 1400, 1, 1]} />
+      <Clouds />
+      <mesh receiveShadow position={[TRACK.center.x, -26, TRACK.center.z]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[1600, 1600, 1, 1]} />
         <meshStandardMaterial color="#558544" roughness={1} />
       </mesh>
     </group>
   );
+}
+
+function Clouds() {
+  const clouds = useMemo(() => {
+    const items = [];
+    for (let i = 0; i < 10; i += 1) {
+      const angle = (i / 10) * Math.PI * 2 + 0.4;
+      const radius = 190 + ((i * 53) % 160);
+      items.push({
+        key: `cloud-${i}`,
+        position: [TRACK.center.x + Math.cos(angle) * radius, 64 + ((i * 19) % 30), TRACK.center.z + Math.sin(angle) * radius],
+        scale: [16 + ((i * 11) % 14), 3.4 + ((i * 7) % 4), 9 + ((i * 13) % 8)],
+      });
+    }
+    return items;
+  }, []);
+  return clouds.map((cloud) => (
+    <mesh key={cloud.key} position={cloud.position} scale={cloud.scale}>
+      <sphereGeometry args={[1, 7, 5]} />
+      <meshStandardMaterial color="#fbfdff" roughness={1} transparent opacity={0.88} />
+    </mesh>
+  ));
 }
 
 function Instances({ matrices, geometry, material, castShadow = false }) {
@@ -524,7 +555,7 @@ function createMountains() {
     const angle = (i / 16) * Math.PI * 2;
     const radius = 430 + ((i * 37) % 110);
     const scale = 42 + ((i * 23) % 48);
-    const position = new THREE.Vector3(110 + Math.cos(angle) * radius, scale * 0.8 - 26, -120 + Math.sin(angle) * radius);
+    const position = new THREE.Vector3(TRACK.center.x + Math.cos(angle) * radius, scale * 0.8 - 26, TRACK.center.z + Math.sin(angle) * radius);
     // keep the whole cone footprint (base radius = 1.5 * scale) away from the road
     if (!isPointClearOfRoad(position, scale * 1.5 + TRACK.railOffset + 20)) continue;
     items.push({
@@ -619,6 +650,8 @@ function createCurveMarkers() {
 
 const RaceCar = forwardRef(function RaceCar({ carState, color }, ref) {
   const paint = color || "#d81f33";
+  // dark stripe on light paint, light stripe otherwise
+  const stripe = ["#e8ecef", "#f5b818"].includes(paint) ? "#14181d" : "#f4f7fa";
   const bodyRef = useRef(null);
   const frontLeftSteer = useRef(null);
   const frontRightSteer = useRef(null);
@@ -690,11 +723,61 @@ const RaceCar = forwardRef(function RaceCar({ carState, color }, ref) {
           <boxGeometry args={[1.34, 0.07, 1.25]} />
           <meshStandardMaterial color={paint} roughness={0.3} metalness={0.4} />
         </mesh>
-        {/* rear deck */}
+        {/* rear deck + fastback slope */}
         <mesh castShadow position={[0, 0.68, -1.75]}>
           <boxGeometry args={[1.9, 0.34, 0.85]} />
           <meshStandardMaterial color={paint} roughness={0.28} metalness={0.4} />
         </mesh>
+        <mesh castShadow position={[0, 1.05, -1.18]} rotation={[-0.42, 0, 0]}>
+          <boxGeometry args={[1.46, 0.07, 0.85]} />
+          <meshStandardMaterial color="#0c1722" roughness={0.14} metalness={0.5} />
+        </mesh>
+        {/* racing stripes over nose, roof, and deck */}
+        {[-0.22, 0.22].map((x) => (
+          <mesh key={`stripe-nose-${x}`} position={[x, 0.745, 1.62]} rotation={[0.1, 0, 0]}>
+            <boxGeometry args={[0.17, 0.02, 1.34]} />
+            <meshStandardMaterial color={stripe} roughness={0.4} />
+          </mesh>
+        ))}
+        {[-0.22, 0.22].map((x) => (
+          <mesh key={`stripe-roof-${x}`} position={[x, 1.305, -0.35]}>
+            <boxGeometry args={[0.17, 0.02, 1.25]} />
+            <meshStandardMaterial color={stripe} roughness={0.4} />
+          </mesh>
+        ))}
+        {[-0.22, 0.22].map((x) => (
+          <mesh key={`stripe-deck-${x}`} position={[x, 0.86, -1.78]}>
+            <boxGeometry args={[0.17, 0.02, 0.8]} />
+            <meshStandardMaterial color={stripe} roughness={0.4} />
+          </mesh>
+        ))}
+        {/* side mirrors */}
+        {[-1.02, 1.02].map((x) => (
+          <group key={`mirror-${x}`} position={[x, 1.0, 0.42]}>
+            <mesh castShadow>
+              <boxGeometry args={[0.18, 0.1, 0.22]} />
+              <meshStandardMaterial color={paint} roughness={0.3} metalness={0.4} />
+            </mesh>
+            <mesh position={[Math.sign(x) * -0.04, 0, -0.06]}>
+              <boxGeometry args={[0.1, 0.07, 0.02]} />
+              <meshStandardMaterial color="#9fc2d8" roughness={0.1} metalness={0.7} />
+            </mesh>
+          </group>
+        ))}
+        {/* front grille */}
+        <mesh position={[0, 0.46, 2.3]}>
+          <boxGeometry args={[0.8, 0.18, 0.05]} />
+          <meshStandardMaterial color="#0a0d11" roughness={0.6} />
+        </mesh>
+        {/* wheel arch trims */}
+        {[-0.9, 0.9].map((x) =>
+          [1.32, -1.32].map((z) => (
+            <mesh key={`arch-${x}-${z}`} castShadow position={[x, 0.62, z]}>
+              <boxGeometry args={[0.14, 0.16, 1.0]} />
+              <meshStandardMaterial color="#15181c" roughness={0.5} />
+            </mesh>
+          )),
+        )}
         {/* wing */}
         {[-0.58, 0.58].map((x) => (
           <mesh key={x} castShadow position={[x, 1.0, -1.98]}>
@@ -897,10 +980,37 @@ function GhostCar({ run, color }) {
   });
   return (
     <group ref={ref}>
-      <mesh>
-        <boxGeometry args={[2.2, 0.58, 3.2]} />
-        <meshStandardMaterial color={color} transparent opacity={0.34} roughness={0.5} />
+      <GhostShell color={color} />
+    </group>
+  );
+}
+
+function GhostShell({ color }) {
+  const material = useMemo(
+    () => new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.32, roughness: 0.35, metalness: 0.3, depthWrite: false }),
+    [color],
+  );
+  return (
+    <group>
+      <mesh material={material} position={[0, 0.55, -0.15]}>
+        <boxGeometry args={[1.94, 0.42, 3.4]} />
       </mesh>
+      <mesh material={material} position={[0, 0.52, 1.72]} rotation={[0.1, 0, 0]}>
+        <boxGeometry args={[1.84, 0.34, 1.3]} />
+      </mesh>
+      <mesh material={material} position={[0, 0.96, -0.35]}>
+        <boxGeometry args={[1.5, 0.48, 1.45]} />
+      </mesh>
+      <mesh material={material} position={[0, 1.15, -2.0]}>
+        <boxGeometry args={[1.9, 0.07, 0.45]} />
+      </mesh>
+      {[-0.88, 0.88].map((x) =>
+        [-1.32, 1.32].map((z) => (
+          <mesh key={`${x}${z}`} material={material} position={[x, 0.34, z]} rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.34, 0.34, 0.28, 10]} />
+          </mesh>
+        )),
+      )}
     </group>
   );
 }

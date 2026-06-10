@@ -6,27 +6,42 @@ export const TRACK = {
   laps: 3,
   width: 10,
   railOffset: 5.8,
-  startDistance: 190,
+  startDistance: 60,
+  center: { x: 140, z: 140 }, // rough centroid, used for mountains/ground placement
 };
 
+// Course laid out as named sections (closed loop, ~1300 m).
+// Heading +X off the line; "right" curves toward +Z.
 const CONTROL_POINTS = [
-  [0, 0, 0],
-  [88, 0.1, 0],
-  [126, 0.4, -56],
-  [184, 0.7, 38],
-  [252, 1, 0],
-  [320, 1.5, -54],
-  [300, 1.9, -112],
-  [340, 2.4, -172],
-  [288, 3, -234],
-  [212, 3.6, -242],
-  [154, 4, -178],
-  [74, 4.4, -258],
-  [-28, 4.1, -224],
-  [-104, 3.3, -164],
-  [-76, 2.6, -92],
-  [-138, 1.8, -38],
-  [-56, 0.8, -8],
+  // start/finish straight
+  [-60, 0.2, 0],
+  [20, 0.2, 0],
+  [95, 0.3, 2],
+  // easy right
+  [155, 0.6, 16],
+  [196, 1.0, 52],
+  // medium left
+  [216, 1.4, 110],
+  [256, 1.8, 152],
+  // approach straight
+  [320, 2.4, 186],
+  // hairpin right (crest of the climb)
+  [372, 2.9, 202],
+  [398, 3.2, 232],
+  [386, 3.4, 266],
+  [340, 3.3, 278],
+  // S-chicane (descent begins)
+  [276, 2.8, 258],
+  [230, 2.4, 274],
+  [186, 2.0, 258],
+  // recovery straight
+  [95, 1.4, 252],
+  [5, 0.9, 250],
+  // final sweeper back to the start straight
+  [-72, 0.7, 236],
+  [-112, 0.5, 178],
+  [-116, 0.3, 108],
+  [-92, 0.2, 42],
 ];
 
 const curve = new THREE.CatmullRomCurve3(
@@ -97,6 +112,39 @@ export function projectPointToTrack(point, hintDistance = 0, searchRadius = 90, 
   const lateral = offset.dot(frame.normal);
   return { distance: bestDistance, frame, lateral, center: frame.position.clone(), projectionDistance: Math.sqrt(bestDistanceSq) };
 }
+
+// Minimap: track outline normalized into a 100x100 viewBox, plus a mapper for
+// live world positions. Computed once at module load.
+export const MINIMAP = (() => {
+  const sampleCount = 170;
+  const raw = [];
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (let i = 0; i <= sampleCount; i += 1) {
+    const frame = getTrackFrame((i / sampleCount) * totalLength);
+    raw.push({ x: frame.position.x, z: frame.position.z });
+    minX = Math.min(minX, frame.position.x);
+    maxX = Math.max(maxX, frame.position.x);
+    minZ = Math.min(minZ, frame.position.z);
+    maxZ = Math.max(maxZ, frame.position.z);
+  }
+  const pad = 8;
+  const scale = (100 - pad * 2) / Math.max(maxX - minX, maxZ - minZ);
+  const cx = (minX + maxX) / 2;
+  const cz = (minZ + maxZ) / 2;
+  const toMap = (x, z) => ({
+    x: Number((50 + (x - cx) * scale).toFixed(1)),
+    y: Number((50 - (z - cz) * scale).toFixed(1)),
+  });
+  const points = raw.map((p) => {
+    const m = toMap(p.x, p.z);
+    return `${m.x},${m.y}`;
+  }).join(" ");
+  const startFrame = getTrackFrame(TRACK.startDistance);
+  return { points, toMap, start: toMap(startFrame.position.x, startFrame.position.z) };
+})();
 
 export function isPointClearOfRoad(point, minDistance = TRACK.railOffset + 4, sampleCount = 220) {
   const flatPoint = new THREE.Vector2(point.x, point.z);

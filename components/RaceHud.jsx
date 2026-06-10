@@ -1,3 +1,5 @@
+import { MINIMAP } from "../game/track";
+
 const GAUGE_MAX_KMH = 240;
 const GAUGE_SWEEP_DEG = 264;
 
@@ -61,10 +63,18 @@ export default function RaceHud({ race, driver, muted, onToggleMute, onPause }) 
       )}
 
       <div className="progress-map">
+        <svg className="minimap" viewBox="0 0 100 100" aria-hidden>
+          <polyline points={MINIMAP.points} className="minimap-road-casing" />
+          <polyline points={MINIMAP.points} className="minimap-road" />
+          <circle cx={MINIMAP.start.x} cy={MINIMAP.start.y} r="2.6" className="minimap-start" />
+          {race.mapPos && <circle cx={race.mapPos.x} cy={race.mapPos.y} r="3.4" className="minimap-car" />}
+        </svg>
         <div className="progress-track">
           <span style={{ left: `${race.progress * 100}%` }} />
         </div>
       </div>
+
+      {race.wrongWay && <div className="wrong-way">WRONG WAY</div>}
 
       <div className="speedo">
         <div
