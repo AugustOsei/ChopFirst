@@ -1063,11 +1063,11 @@ textarea:focus {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 18px;
+  bottom: 0;
   display: flex;
   justify-content: space-between;
-  align-items: end;
-  padding: 0 0 0 172px;
+  align-items: flex-end;
+  padding: 0 10px calc(10px + env(safe-area-inset-bottom, 0px));
   pointer-events: none;
 }
 
@@ -1077,60 +1077,139 @@ textarea:focus {
   }
 }
 
-.steer-pad,
-.drive-pad {
+.corner-cluster,
+.center-cluster {
   display: flex;
-  gap: 10px;
-  padding-right: 18px;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
   pointer-events: auto;
 }
 
-.drive-pad {
-  align-items: end;
-}
-
 .touch-controls button {
-  width: 64px;
-  height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
   border: 1px solid rgba(255, 255, 255, .3);
-  border-radius: 50%;
-  background: rgba(13, 20, 27, .66);
+  background: rgba(13, 20, 27, .6);
   color: #f9fbfb;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 900;
-  letter-spacing: .06em;
+  letter-spacing: .08em;
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
   backdrop-filter: blur(12px);
   box-shadow: 0 10px 28px rgba(0, 0, 0, .25);
 }
 
-.touch-controls button:active {
-  transform: scale(.94);
-  filter: brightness(1.25);
+.touch-controls button.pressed {
+  transform: scale(.95);
+  filter: brightness(1.3);
 }
 
-.steer-pad button {
-  width: 70px;
-  height: 70px;
-  font-size: 32px;
+.t-steer {
+  width: 86px;
+  height: 112px;
+  border-radius: 24px;
+  font-size: 52px;
+  font-weight: 800;
   line-height: 1;
+  padding-bottom: 8px;
 }
 
-.touch-controls .boost {
-  background: rgba(255, 177, 46, .9);
-  color: #1d1305;
+.t-drift {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: rgba(24, 31, 40, .78);
 }
 
-.touch-controls .handbrake {
-  background: rgba(24, 31, 40, .85);
-  color: #fff;
-}
-
-.touch-controls .brake {
-  width: 76px;
+.t-boost {
+  width: 62px;
   height: 76px;
-  background: rgba(255, 69, 58, .85);
+  border-radius: 16px;
+  color: #ffb12e;
+  background: rgba(26, 18, 5, .55);
+  border-color: rgba(255, 177, 46, .55);
+}
+
+.t-boost b {
+  font-size: 11px;
+}
+
+.t-boost.empty {
+  opacity: .45;
+}
+
+.t-brake {
+  flex-direction: row;
+  gap: 7px;
+  width: 118px;
+  height: 50px;
+  border-radius: 999px;
+  background: rgba(255, 69, 58, .82);
   color: #fff8f7;
+  border-color: rgba(255, 255, 255, .4);
+  font-size: 11px;
+}
+
+.reverse-hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(160px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, .25);
+  border-radius: 999px;
+  background: rgba(9, 15, 22, .88);
+  color: #f4f7fa;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: hint-pop .3s ease;
+}
+
+@keyframes hint-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+}
+
+/* Touch devices regardless of width/orientation: full-bleed stage (the 720px
+   query misses landscape phones), no scroll, HUD clear of the corner zones. */
+@media (hover: none) {
+  .app-shell {
+    padding: 0;
+  }
+
+  .game-stage {
+    width: 100%;
+    height: 100dvh;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .speedo {
+    left: 10px;
+    bottom: calc(200px + env(safe-area-inset-bottom, 0px));
+    width: 92px;
+    height: 92px;
+  }
+
+  .speedo-core b {
+    font-size: 26px;
+  }
+
+  /* boost tank in the touch controls is the meter */
+  .boost-meter {
+    display: none;
+  }
 }
 
 .stats-grid {
@@ -1759,35 +1838,7 @@ kbd {
     font-size: 15px;
   }
 
-  .touch-controls {
-    bottom: 16px;
-    padding: 0 12px;
-  }
-
-  .steer-pad,
-  .drive-pad {
-    padding-right: 0;
-    gap: 8px;
-  }
-
-  .touch-controls button {
-    width: 58px;
-    height: 58px;
-  }
-
-  .steer-pad button {
-    width: 62px;
-    height: 62px;
-  }
-
-  .touch-controls .brake {
-    width: 68px;
-    height: 68px;
-  }
-
   .speedo {
-    left: 12px;
-    bottom: 100px;
     width: 92px;
     height: 92px;
   }

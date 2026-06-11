@@ -20,7 +20,7 @@ import {
   pointAt,
   TRACK,
 } from "../game/track";
-import { createVehicleState, getVehicleTransform, updateVehicle } from "../game/vehicle";
+import { createVehicleState, getVehicleTransform, MAX_BOOST_CHARGES, updateVehicle } from "../game/vehicle";
 import { createGameAudio } from "../game/audio";
 
 const INITIAL_RACE = {
@@ -92,7 +92,7 @@ export default function RaceGame({ driver, challenge, pbRun, onFinish, onQuit })
         <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} onFinish={onFinish} setRace={setRace} showDebug={showDebug} pausedRef={pausedRef} audio={audio} />
       </Canvas>
       <RaceHud race={race} driver={driver} muted={muted} onToggleMute={() => setMuted((value) => !value)} onPause={() => setPaused(true)} />
-      <TouchControls controlsRef={inputRef} />
+      <TouchControls controlsRef={inputRef} boosts={race.boosts} />
       {paused && !showGuide && (
         <PauseOverlay onResume={() => setPaused(false)} onGuide={() => setShowGuide(true)} onQuit={onQuit} />
       )}
@@ -110,8 +110,8 @@ function PauseOverlay({ onResume, onGuide, onQuit }) {
         <h2 className="pause-title">CHOP FIRST</h2>
         {touch ? (
           <ul className="pause-hints">
-            <li>Auto-throttle — steer with <b>‹ ›</b></li>
-            <li><b>BRAKE</b> hold to reverse · <b>DRIFT</b> slides · <b>BOOST</b> fires</li>
+            <li>Auto-throttle — corners steer, one thumb each</li>
+            <li>Hold <b>DRIFT</b> with your free thumb · tap the <b>tank</b> to boost · hold <b>BRAKE</b> to stop, keep holding to reverse</li>
           </ul>
         ) : (
           <ul className="pause-hints">
@@ -1280,36 +1280,131 @@ function getGhostTransform(distance, lateral, headingError) {
 
 /* --------------------------------- controls --------------------------------- */
 
-function TouchControls({ controlsRef }) {
-  const bind = (key) => ({
-    onPointerDown: (event) => {
+function DriftIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+      <circle cx="15.5" cy="8.5" r="5" />
+      <path d="M3 21c2.6-1.1 4.3-2.8 5.4-5.4" />
+      <path d="M8.5 21.5c2-.9 3.4-2.3 4.3-4.3" opacity=".55" />
+    </svg>
+  );
+}
+
+function BrakeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+      <circle cx="12" cy="12" r="6.2" />
+      <path d="M4.6 4.6a10.4 10.4 0 0 0 0 14.8" />
+      <path d="M19.4 4.6a10.4 10.4 0 0 1 0 14.8" />
+      <path d="M12 9.2v3.4" />
+      <circle cx="12" cy="15.4" r=".4" fill="currentColor" />
+    </svg>
+  );
+}
+
+function BoostTank({ boosts }) {
+  const ratio = Math.max(0, Math.min(1, boosts / MAX_BOOST_CHARGES));
+  const fillHeight = 27 * ratio;
+  return (
+    <svg viewBox="0 0 32 46" width="30" height="43" aria-hidden>
+      <rect x="11" y="1" width="10" height="5" rx="1.5" fill="currentColor" opacity=".85" />
+      <rect x="4.5" y="7.5" width="23" height="37" rx="6" fill="none" stroke="currentColor" strokeWidth="2.2" />
+      {ratio > 0 && (
+        <rect x="8.5" y={11.5 + 27 - fillHeight} width="15" height={fillHeight} rx={Math.min(2.5, fillHeight / 2)} fill="currentColor" />
+      )}
+    </svg>
+  );
+}
+
+// Touch layout: throttle is automatic. Steering is split — one zone in each
+// bottom corner so each thumb owns a direction. DRIFT is mirrored above both
+// zones (it's held *while* steering, so it must be reachable by whichever
+// thumb is free). Boost tank + brake bar sit center, out of fat-finger range.
+function TouchControls({ controlsRef, boosts }) {
+  const padRef = useRef(null);
+
+  useEffect(() => {
+    const pad = padRef.current;
+    if (!pad) return;
+    const pointers = new Map();
+    const counts = {};
+
+    // Refcounted: both DRIFT buttons drive the same input key, so a key only
+    // releases when the last finger holding it lifts.
+    const apply = (key, pressed) => {
+      counts[key] = Math.max(0, (counts[key] || 0) + (pressed ? 1 : -1));
+      const on = counts[key] > 0;
+      controlsRef.current[key] = on;
+      pad.querySelectorAll(`[data-control="${key}"]`).forEach((el) => el.classList.toggle("pressed", on));
+    };
+    const controlAt = (x, y) => document.elementFromPoint(x, y)?.closest?.("[data-control]")?.dataset.control ?? null;
+
+    const down = (event) => {
+      const key = event.target.closest?.("[data-control]")?.dataset?.control;
+      if (!key) return;
       // preventDefault blocks iOS long-press selection/magnifier on held buttons
       event.preventDefault();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      controlsRef.current[key] = true;
-    },
-    onPointerUp: () => {
-      controlsRef.current[key] = false;
-    },
-    onPointerCancel: () => {
-      controlsRef.current[key] = false;
-    },
-    onPointerLeave: () => {
-      controlsRef.current[key] = false;
-    },
-  });
+      pointers.set(event.pointerId, key);
+      apply(key, true);
+    };
+    // No pointer capture: thumbs slide between controls (steer ↔ drift) and
+    // releasing means sliding off, so re-target by position on every move.
+    const move = (event) => {
+      const prev = pointers.get(event.pointerId);
+      if (prev === undefined) return;
+      const next = controlAt(event.clientX, event.clientY);
+      if (next === prev) return;
+      if (prev) apply(prev, false);
+      if (next) apply(next, true);
+      pointers.set(event.pointerId, next);
+    };
+    const lift = (event) => {
+      const prev = pointers.get(event.pointerId);
+      if (prev === undefined) return;
+      if (prev) apply(prev, false);
+      pointers.delete(event.pointerId);
+    };
 
-  // throttle is automatic on touch — left thumb steers, right thumb brakes/drifts/boosts
+    pad.addEventListener("pointerdown", down);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", lift);
+    window.addEventListener("pointercancel", lift);
+    return () => {
+      pad.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", lift);
+      window.removeEventListener("pointercancel", lift);
+      for (const key of Object.keys(counts)) {
+        if (counts[key] > 0) controlsRef.current[key] = false;
+      }
+    };
+  }, [controlsRef]);
+
   return (
-    <div className="touch-controls race-controls" onContextMenu={(event) => event.preventDefault()}>
-      <div className="steer-pad">
-        <button aria-label="Steer left" {...bind("left")}>‹</button>
-        <button aria-label="Steer right" {...bind("right")}>›</button>
+    <div ref={padRef} className="touch-controls race-controls" onContextMenu={(event) => event.preventDefault()}>
+      <div className="corner-cluster">
+        <button type="button" className="t-drift" aria-label="Drift" data-control="handbrake">
+          <DriftIcon />
+          <span>DRIFT</span>
+        </button>
+        <button type="button" className="t-steer" aria-label="Steer left" data-control="left">‹</button>
       </div>
-      <div className="drive-pad">
-        <button aria-label="Boost" className="boost" {...bind("boost")}>BOOST</button>
-        <button aria-label="Handbrake" className="handbrake" {...bind("handbrake")}>DRIFT</button>
-        <button aria-label="Brake or reverse" className="brake" {...bind("brake")}>BRAKE</button>
+      <div className="center-cluster">
+        <button type="button" className={`t-boost${boosts <= 0 ? " empty" : ""}`} aria-label={`Boost, ${boosts} charges left`} data-control="boost">
+          <BoostTank boosts={boosts} />
+          <b>×{boosts}</b>
+        </button>
+        <button type="button" className="t-brake" aria-label="Brake, hold to reverse" data-control="brake">
+          <BrakeIcon />
+          <span>BRAKE</span>
+        </button>
+      </div>
+      <div className="corner-cluster">
+        <button type="button" className="t-drift" aria-label="Drift" data-control="handbrake">
+          <DriftIcon />
+          <span>DRIFT</span>
+        </button>
+        <button type="button" className="t-steer" aria-label="Steer right" data-control="right">›</button>
       </div>
     </div>
   );
