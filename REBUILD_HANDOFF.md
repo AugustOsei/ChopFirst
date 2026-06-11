@@ -298,3 +298,27 @@ Known browser warning:
   production, local file otherwise.
 - Repo public at https://github.com/AugustOsei/ChopFirst.
 
+### 2026-06-11 — challenge loop, presentation, feedback
+
+- Onboarding split into an animated title screen + separate driver-setup panel
+  (Enter/Space starts; PB pill; challenge pill with live countdown).
+- Chop verdict on the finish panel (CHOPPED / NOT CHOPPED vs the challenge
+  leader) and localStorage personal-best tracking with NEW PERSONAL BEST callout.
+- Challenge loop closed: runs auto-save the moment a race finishes (message is
+  optional and posted after), share text adapts to chopped/missed, title-screen
+  challenge inbox tracks up to 8 followed challenges with new-run badges, and a
+  global all-time leaderboard (best run per anonymous device id) sits behind a
+  title-screen modal at `/api/leaderboard`.
+- `/api/health` storage diagnostics added, and real save errors surface in the
+  finish panel instead of failing silently.
+- Race-day presentation: start gantry with light tree, grandstand, HUD numerals.
+- In-game feedback: bug/idea modal (title screen + results screen) posting to
+  `/api/feedback`, stored in the shared store capped at 200 entries. Owner reads
+  it with `?key=` matching `FEEDBACK_ADMIN_KEY`; the same key now gates full
+  `/api/health` diagnostics (public response is a bare `{ ok: true }`).
+- Home buttons added to the finish and results panels.
+- Security pass: no secrets in working tree or git history; `data/` (player
+  photos/messages) and `.env*` gitignored and never committed; npm audit shows
+  2 moderate advisories (postcss via next, build-time only — do not run
+  `npm audit fix --force`, it downgrades next to 9.x).
+

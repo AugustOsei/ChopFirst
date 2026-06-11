@@ -20,6 +20,8 @@ for the next drivers on your challenge link.
 - **Custom driver** — name, profile photo, and six paint colors, remembered between visits.
 - **Synthesized audio** — engine, drift screech, boost whoosh, coin chime (mutable).
 - **Touch controls** — fully playable on phones; steering pads appear automatically.
+- **In-game feedback** — players can report bugs or suggest features from the title
+  and results screens; submissions are stored server-side for the owner to review.
 
 ## Controls
 
@@ -64,13 +66,25 @@ UPSTASH_REDIS_REST_TOKEN=...   # or KV_REST_API_TOKEN
 
 No code changes required — `lib/challenges.js` detects them automatically.
 
+**Owner endpoints.** Set one more environment variable to read player feedback
+and full storage diagnostics:
+
+```
+FEEDBACK_ADMIN_KEY=<any random string you keep private>
+```
+
+- `/api/feedback?key=<your key>` — all bug reports and feature suggestions, newest first.
+- `/api/health?key=<your key>` — storage backend diagnostics (read/write checks).
+  Without the key, `/api/health` only returns `{ "ok": true }`.
+
 ## Project structure
 
 ```
-app/            Next.js app router — shell, styles, challenge API routes
-components/     RaceGame (R3F scene, car, FX), RaceHud, GuideModal
+app/            Next.js app router — shell, styles, API routes
+                (challenges, leaderboard, feedback, health)
+components/     RaceGame (R3F scene, car, FX), RaceHud, GuideModal, FeedbackModal
 game/           vehicle.js (arcade physics), track.js (spline/geometry), audio.js
-lib/            challenge persistence (Redis or file)
+lib/            persistence — challenges, global board, feedback (Redis or file)
 scripts/        qa-sim — headless driving test of the real vehicle model
 ```
 
