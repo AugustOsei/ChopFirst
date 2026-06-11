@@ -586,6 +586,30 @@ input:focus {
   font-size: 13px;
 }
 
+.lap-chip {
+  border-color: rgba(255, 209, 92, .45);
+}
+
+.lap-chip small {
+  color: #ffd98c;
+}
+
+.lap-chip b {
+  font-style: italic;
+  font-size: 21px;
+  background: linear-gradient(180deg, #fff 20%, #ffd45e 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.lap-chip b i {
+  background: none;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  color: #76838f;
+}
+
 .hud-chip .drift-live {
   color: #ffce4a;
   text-shadow: 0 0 14px rgba(255, 206, 74, .8);
@@ -852,16 +876,31 @@ input:focus {
   inset: 0;
   display: grid;
   place-items: center;
-  color: #fff7df;
-  font-size: clamp(84px, 18vw, 190px);
+  font-size: clamp(110px, 24vw, 250px);
   font-weight: 950;
-  text-shadow: 0 8px 0 rgba(16, 24, 32, .42), 0 0 42px rgba(223, 31, 47, .45);
+  font-style: italic;
   pointer-events: none;
 }
 
+.race-countdown span {
+  background: linear-gradient(180deg, #ffffff 12%, #ffd45e 52%, #ff6a2e 95%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter:
+    drop-shadow(0 6px 0 rgba(16, 24, 32, .55))
+    drop-shadow(0 0 46px rgba(255, 130, 40, .55));
+}
+
 .race-countdown.go {
-  color: #b8ff9e;
-  text-shadow: 0 8px 0 rgba(16, 24, 32, .42), 0 0 48px rgba(96, 224, 110, .65);
+  font-size: clamp(90px, 19vw, 200px);
+  background: linear-gradient(180deg, #eafff0 10%, #7df0ae 55%, #1d9d55 95%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter:
+    drop-shadow(0 6px 0 rgba(16, 24, 32, .55))
+    drop-shadow(0 0 52px rgba(96, 224, 110, .7));
   animation: go-pop .9s ease-out forwards;
 }
 

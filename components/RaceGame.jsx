@@ -229,6 +229,7 @@ function RaceScene({ inputRef, challenge, driver, onFinish, setRace, showDebug, 
   return (
     <group>
       <TrackWorld />
+      <StartGantry countdownRef={countdownRef} />
       <Pickups collected={car.coins} />
       <Ghosts challenge={challenge} />
       <RaceCar ref={carRef} carState={car} color={driver?.color} />
@@ -381,7 +382,7 @@ function TrackWorld() {
       <Delineators />
       <Forest />
       <Rocks />
-      <StartLine />
+      <Grandstand />
       {curveMarkers.map((marker) => (
         <CurveMarker key={marker.key} position={marker.position} yaw={marker.yaw} direction={marker.direction} />
       ))}
@@ -568,35 +569,218 @@ function createMountains() {
   return items;
 }
 
-function StartLine() {
-  const frame = getTrackFrame(TRACK.startDistance);
-  const position = frame.position.clone();
-  position.y += 0.2;
-  const yaw = Math.atan2(frame.tangent.x, frame.tangent.z);
+function StartGantry({ countdownRef }) {
+  const lightMats = useRef([]);
+  const { position, yaw } = useMemo(() => {
+    const frame = getTrackFrame(TRACK.startDistance);
+    const pos = frame.position.clone();
+    pos.y += 0.2;
+    return { position: pos, yaw: Math.atan2(frame.tangent.x, frame.tangent.z) };
+  }, []);
+
+  const checkerTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 20;
+    canvas.height = 4;
+    const ctx = canvas.getContext("2d");
+    for (let x = 0; x < 20; x += 1) {
+      for (let y = 0; y < 4; y += 1) {
+        ctx.fillStyle = (x + y) % 2 ? "#15181c" : "#f4f6f2";
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.magFilter = THREE.NearestFilter;
+    return texture;
+  }, []);
+
+  const bannerTexture = useMemo(() => {
+    const texture = new THREE.TextureLoader().load("/banner.jpg");
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
+
+  useFrame(() => {
+    const c = countdownRef?.current ?? -1;
+    // F1-style: red lights fill during 3-2-1, all green at GO, then off
+    const lit = c > 0 ? Math.max(0, Math.min(5, Math.ceil((3 - c) / 0.6))) : 5;
+    const go = c <= 0 && c > -0.9;
+    const off = c <= -0.9;
+    lightMats.current.forEach((material, index) => {
+      if (!material) return;
+      if (off) {
+        material.emissiveIntensity = 0.05;
+        material.color.set("#23090c");
+        material.emissive.set("#3a0d12");
+      } else if (go) {
+        material.color.set("#1d4d2a");
+        material.emissive.set("#37ff78");
+        material.emissiveIntensity = 3.2;
+      } else if (index < lit) {
+        material.color.set("#5e1016");
+        material.emissive.set("#ff2231");
+        material.emissiveIntensity = 3;
+      } else {
+        material.emissiveIntensity = 0.05;
+        material.color.set("#23090c");
+        material.emissive.set("#3a0d12");
+      }
+    });
+  });
+
   return (
     <group position={position} rotation={[0, yaw, 0]}>
-      <mesh>
-        <boxGeometry args={[TRACK.width * 0.92, 0.05, 1.2]} />
-        <meshStandardMaterial color="#f7f7ef" roughness={0.6} />
+      {/* checkered start line painted on the road */}
+      <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[TRACK.width * 0.96, 2.2]} />
+        <meshStandardMaterial map={checkerTexture} roughness={0.7} />
       </mesh>
-      <mesh position={[0, 0.08, -1.2]}>
-        <boxGeometry args={[TRACK.width * 0.92, 0.06, 0.28]} />
-        <meshStandardMaterial color="#d8202f" roughness={0.5} />
+      {/* A-frame legs with feet */}
+      {[-6.1, 6.1].map((x) => (
+        <group key={x} position={[x, 0, -0.4]}>
+          <mesh castShadow position={[0, 2.6, 0]}>
+            <boxGeometry args={[0.34, 5.2, 0.34]} />
+            <meshStandardMaterial color="#dfe5e8" metalness={0.5} roughness={0.35} />
+          </mesh>
+          <mesh castShadow position={[0, 2.6, 0]} rotation={[0, 0, x > 0 ? 0.1 : -0.1]}>
+            <boxGeometry args={[0.16, 5.0, 0.16]} />
+            <meshStandardMaterial color="#9aa6ac" metalness={0.5} roughness={0.4} />
+          </mesh>
+          <mesh position={[0, 0.18, 0]}>
+            <boxGeometry args={[1.1, 0.36, 1.1]} />
+            <meshStandardMaterial color="#d8202f" roughness={0.5} />
+          </mesh>
+        </group>
+      ))}
+      {/* striped barrier blocks at the legs */}
+      {[-6.1, 6.1].map((x) =>
+        [0, 1, 2].map((i) => (
+          <mesh key={`${x}-${i}`} castShadow position={[x + (x > 0 ? 0.0 : 0.0), 0.32, 0.9 + i * 0.95]}>
+            <boxGeometry args={[0.7, 0.62, 0.9]} />
+            <meshStandardMaterial color={i % 2 ? "#f4f6f2" : "#d8202f"} roughness={0.6} />
+          </mesh>
+        )),
+      )}
+      {/* top truss */}
+      <mesh castShadow position={[0, 5.25, -0.4]}>
+        <boxGeometry args={[12.9, 0.22, 0.42]} />
+        <meshStandardMaterial color="#dfe5e8" metalness={0.5} roughness={0.35} />
       </mesh>
-      <mesh position={[0, 4.4, -0.4]}>
-        <boxGeometry args={[11.8, 0.7, 0.3]} />
-        <meshStandardMaterial color="#14181d" roughness={0.35} />
+      <mesh castShadow position={[0, 4.45, -0.4]}>
+        <boxGeometry args={[12.9, 0.22, 0.42]} />
+        <meshStandardMaterial color="#dfe5e8" metalness={0.5} roughness={0.35} />
       </mesh>
-      {[-5.7, 5.7].map((x) => (
-        <mesh key={x} position={[x, 2.2, -0.4]}>
-          <boxGeometry args={[0.26, 4.4, 0.26]} />
-          <meshStandardMaterial color="#14181d" roughness={0.35} />
+      {Array.from({ length: 9 }, (_, i) => -5.4 + i * 1.35).map((x, i) => (
+        <mesh key={`brace-${x}`} position={[x, 4.85, -0.4]} rotation={[0, 0, i % 2 ? 0.7 : -0.7]}>
+          <boxGeometry args={[0.1, 0.95, 0.1]} />
+          <meshStandardMaterial color="#9aa6ac" metalness={0.5} roughness={0.4} />
         </mesh>
       ))}
-      <mesh position={[0, 4.4, -0.24]}>
-        <boxGeometry args={[4.6, 0.46, 0.05]} />
-        <meshBasicMaterial color="#ffd45e" />
+      {/* CHOP FIRST banner — rotated to face the approaching cars */}
+      <mesh position={[0, 3.35, -0.38]} rotation={[0, Math.PI, 0]}>
+        <planeGeometry args={[11.6, 1.9]} />
+        <meshBasicMaterial map={bannerTexture} side={THREE.DoubleSide} toneMapped={false} />
       </mesh>
+      {/* start light pod */}
+      <group position={[0, 4.85, -0.72]}>
+        <mesh castShadow>
+          <boxGeometry args={[3.1, 0.78, 0.3]} />
+          <meshStandardMaterial color="#101418" roughness={0.4} />
+        </mesh>
+        {[-1.2, -0.6, 0, 0.6, 1.2].map((x, index) => (
+          <mesh key={x} position={[x, 0, -0.17]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.19, 0.19, 0.06, 14]} />
+            <meshStandardMaterial
+              ref={(node) => {
+                lightMats.current[index] = node;
+              }}
+              color="#23090c"
+              emissive="#3a0d12"
+              emissiveIntensity={0.05}
+              toneMapped={false}
+            />
+          </mesh>
+        ))}
+      </group>
+    </group>
+  );
+}
+
+function Grandstand() {
+  const { position, yaw, crowd } = useMemo(() => {
+    const frame = getTrackFrame(TRACK.startDistance - 6);
+    const pos = frame.position.clone().addScaledVector(frame.normal, -(TRACK.railOffset + 7.5));
+    pos.y += 0.1;
+    // stand sits on the -normal side, so face it toward +normal (the road)
+    const yawAngle = Math.atan2(frame.tangent.x, frame.tangent.z) - Math.PI / 2;
+    const dummy = new THREE.Object3D();
+    const matrices = [];
+    const colors = [];
+    const palette = ["#ff5a4e", "#ffd45e", "#4da3ff", "#7df0ae", "#f4f6f2", "#c178ff"];
+    for (let tier = 0; tier < 3; tier += 1) {
+      for (let i = 0; i < 14; i += 1) {
+        if ((i * 7 + tier * 3) % 4 === 0) continue; // gaps in the crowd
+        dummy.position.set(-5.8 + i * 0.9 + ((tier * 13 + i * 7) % 3) * 0.12, 1.05 + tier * 0.78, -0.55 - tier * 1.05);
+        dummy.rotation.set(0, 0, 0);
+        dummy.scale.set(0.42, 0.62, 0.36);
+        dummy.updateMatrix();
+        matrices.push(dummy.matrix.clone());
+        colors.push(new THREE.Color(palette[(i + tier * 5) % palette.length]));
+      }
+    }
+    return { position: pos, yaw: yawAngle, crowd: { matrices, colors } };
+  }, []);
+
+  const crowdRef = useRef(null);
+  useLayoutEffect(() => {
+    const mesh = crowdRef.current;
+    if (!mesh) return;
+    crowd.matrices.forEach((matrix, index) => {
+      mesh.setMatrixAt(index, matrix);
+      mesh.setColorAt(index, crowd.colors[index]);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }, [crowd]);
+
+  return (
+    <group position={position} rotation={[0, yaw, 0]}>
+      {/* tiered seating */}
+      {[0, 1, 2].map((tier) => (
+        <mesh key={tier} castShadow receiveShadow position={[0, 0.4 + tier * 0.78, -tier * 1.05]}>
+          <boxGeometry args={[13, 0.8 + tier * 0.0, 1.15]} />
+          <meshStandardMaterial color={tier % 2 ? "#5a666e" : "#4a545b"} roughness={0.8} />
+        </mesh>
+      ))}
+      {/* crowd */}
+      <instancedMesh ref={crowdRef} args={[undefined, undefined, crowd.matrices.length]} frustumCulled={false}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial roughness={0.8} />
+      </instancedMesh>
+      {/* roof */}
+      {[-5.6, 5.6].map((x) => (
+        <mesh key={x} castShadow position={[x, 2.7, -1.6]}>
+          <boxGeometry args={[0.18, 2.6, 0.18]} />
+          <meshStandardMaterial color="#3d464b" roughness={0.5} />
+        </mesh>
+      ))}
+      <mesh castShadow position={[0, 4.05, -1.3]} rotation={[0.16, 0, 0]}>
+        <boxGeometry args={[13.4, 0.12, 2.6]} />
+        <meshStandardMaterial color="#d8202f" roughness={0.55} />
+      </mesh>
+      {/* flag poles */}
+      {[-7.4, 7.4].map((x) => (
+        <group key={x} position={[x, 0, 0.4]}>
+          <mesh castShadow position={[0, 2.6, 0]}>
+            <cylinderGeometry args={[0.05, 0.07, 5.2, 6]} />
+            <meshStandardMaterial color="#cfd9dd" metalness={0.5} roughness={0.4} />
+          </mesh>
+          <mesh position={[0.55, 4.85, 0]}>
+            <planeGeometry args={[1.1, 0.62]} />
+            <meshStandardMaterial color={x < 0 ? "#ffd45e" : "#d8202f"} side={THREE.DoubleSide} roughness={0.7} />
+          </mesh>
+        </group>
+      ))}
     </group>
   );
 }
@@ -789,6 +973,25 @@ const RaceCar = forwardRef(function RaceCar({ carState, color }, ref) {
           <boxGeometry args={[1.92, 0.07, 0.46]} />
           <meshStandardMaterial color="#15181c" roughness={0.35} metalness={0.3} />
         </mesh>
+        {/* wing endplates */}
+        {[-0.97, 0.97].map((x) => (
+          <mesh key={`endplate-${x}`} castShadow position={[x, 1.13, -2.02]}>
+            <boxGeometry args={[0.05, 0.3, 0.52]} />
+            <meshStandardMaterial color={paint} roughness={0.3} metalness={0.4} />
+          </mesh>
+        ))}
+        {/* shark fin */}
+        <mesh castShadow position={[0, 0.95, -1.45]}>
+          <boxGeometry args={[0.04, 0.22, 0.65]} />
+          <meshStandardMaterial color={paint} roughness={0.3} metalness={0.4} />
+        </mesh>
+        {/* front canards */}
+        {[-0.86, 0.86].map((x) => (
+          <mesh key={`canard-${x}`} castShadow position={[x, 0.42, 2.05]} rotation={[0.18, 0, x > 0 ? -0.22 : 0.22]}>
+            <boxGeometry args={[0.28, 0.03, 0.34]} />
+            <meshStandardMaterial color="#15181c" roughness={0.4} />
+          </mesh>
+        ))}
         {/* splitter */}
         <mesh position={[0, 0.28, 2.18]}>
           <boxGeometry args={[1.9, 0.12, 0.34]} />
