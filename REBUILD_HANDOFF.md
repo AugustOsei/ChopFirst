@@ -391,3 +391,15 @@ Known browser warning:
 - Tuning note: if 15 feels too generous (bot banks 4 bonus boosts driving the
   center line), raise COINS_PER_BOOST — the validator follows automatically.
 
+### 2026-06-11 round 5 — versioning + changelog
+
+- Player-facing release notes live in `lib/changelog.js`; the top entry IS the
+  current version (CURRENT_VERSION derives from it). To ship a release: add an
+  entry there (player language, not commit messages) and keep package.json
+  version roughly in sync.
+- Title footer shows a `v1.0` chip; a pulsing gold dot appears for anyone whose
+  localStorage `chopfirst.seenVersion` doesn't match, and clicking opens a
+  ChangelogModal (guide-card style) and marks the version seen.
+- Pause overlay now shows touch hints (auto-throttle/BRAKE/DRIFT/BOOST) on
+  touch devices instead of keyboard shortcuts.
+

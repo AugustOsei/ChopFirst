@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import RaceGame from "../components/RaceGame";
 import GuideModal from "../components/GuideModal";
 import FeedbackModal from "../components/FeedbackModal";
+import ChangelogModal from "../components/ChangelogModal";
+import { CURRENT_VERSION } from "../lib/changelog";
 import { logEvent } from "../lib/log-event";
 
 function formatTime(ms) {
@@ -90,6 +92,8 @@ export default function Home() {
   const [showGuide, setShowGuide] = useState(false);
   const [showBoard, setShowBoard] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [showChangelog, setShowChangelog] = useState(false);
+  const [changelogSeen, setChangelogSeen] = useState(true);
   const [pb, setPb] = useState(null);
   const [pbRun, setPbRun] = useState(null);
   const [shareMessage, setShareMessage] = useState("");
@@ -126,7 +130,14 @@ export default function Home() {
     } catch {
       // no PB ghost yet
     }
+    setChangelogSeen(localStorage.getItem("chopfirst.seenVersion") === CURRENT_VERSION);
   }, []);
+
+  function openChangelog() {
+    localStorage.setItem("chopfirst.seenVersion", CURRENT_VERSION);
+    setChangelogSeen(true);
+    setShowChangelog(true);
+  }
 
   useEffect(() => {
     if (driver.name || driver.photo || driver.color !== CAR_COLORS[0].id) {
@@ -245,7 +256,9 @@ export default function Home() {
             onGuide={() => setShowGuide(true)}
             onBoard={() => setShowBoard(true)}
             onFeedback={() => setShowFeedback(true)}
-            overlayOpen={showGuide || showBoard || showFeedback}
+            onChangelog={openChangelog}
+            changelogSeen={changelogSeen}
+            overlayOpen={showGuide || showBoard || showFeedback || showChangelog}
           />
         )}
 
@@ -342,6 +355,7 @@ export default function Home() {
         {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
         {showBoard && <GlobalBoard onClose={() => setShowBoard(false)} />}
         {showFeedback && <FeedbackModal driverName={driver.name} onClose={() => setShowFeedback(false)} />}
+        {showChangelog && <ChangelogModal onClose={() => setShowChangelog(false)} />}
       </section>
     </main>
   );
@@ -504,7 +518,7 @@ function FinishVerdict({ result, challenge, pb }) {
   );
 }
 
-function TitleScreen({ challenge, onStart, onGuide, onBoard, onFeedback, overlayOpen }) {
+function TitleScreen({ challenge, onStart, onGuide, onBoard, onFeedback, onChangelog, changelogSeen, overlayOpen }) {
   const [bestTime, setBestTime] = useState(null);
   useEffect(() => {
     try {
@@ -561,6 +575,11 @@ function TitleScreen({ challenge, onStart, onGuide, onBoard, onFeedback, overlay
         <a href="https://www.augustwheel.com" target="_blank" rel="noopener noreferrer">augustwheel.com</a>
         <span>·</span>
         <span>by <a href="https://www.linkedin.com/in/augustineosei/" target="_blank" rel="noopener noreferrer">Augustine Osei</a></span>
+        <span>·</span>
+        <button className="version-chip" onClick={onChangelog} aria-label="What's new">
+          v{CURRENT_VERSION}
+          {!changelogSeen && <span className="version-dot" aria-hidden />}
+        </button>
       </footer>
     </div>
   );

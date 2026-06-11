@@ -327,6 +327,48 @@ button {
   text-decoration: underline;
 }
 
+.version-chip {
+  position: relative;
+  border: 0;
+  background: none;
+  padding: 0 4px;
+  color: #cfdae5;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.version-chip:hover {
+  color: #ffd15c;
+}
+
+.version-dot {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffca3a;
+  box-shadow: 0 0 8px rgba(255, 202, 58, .9);
+  animation: version-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes version-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.35); opacity: .65; }
+}
+
+.changelog-entry h3 small {
+  display: block;
+  margin-top: 2px;
+  color: #8c9aa8;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
 .setup-title {
   margin-bottom: 6px;
 }
