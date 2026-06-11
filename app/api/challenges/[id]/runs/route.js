@@ -10,6 +10,9 @@ export async function POST(request, { params }) {
   } catch (error) {
     return NextResponse.json({ error: `Storage error: ${error.message}` }, { status: 500 });
   }
+  if (result.error === "invalid") {
+    return NextResponse.json({ error: "This run could not be verified — refresh the game and race again." }, { status: 422 });
+  }
   if (result.error === "missing") {
     return NextResponse.json({ error: "Challenge not found" }, { status: 404 });
   }

@@ -16,6 +16,8 @@ for the next drivers on your challenge link.
   handbrake drifts, rail scrapes with sparks, and forgiving recovery.
 - **Boost** — three charges per run with flames, FOV kick, and screen streaks.
 - **24-hour challenges** — shareable links, leaderboard, ghost cars replaying rivals' runs.
+- **Personal-best ghost** — a gold ghost replays your fastest run on every race, synced to the start.
+- **Verified times** — runs are validated server-side against their ghost trace, so leaderboard times can't be forged with a curl one-liner.
 - **Road messages** — notes from other players appear during your race.
 - **Custom driver** — name, profile photo, and six paint colors, remembered between visits.
 - **Synthesized audio** — engine, drift screech, boost whoosh, coin chime (mutable).
@@ -74,6 +76,8 @@ FEEDBACK_ADMIN_KEY=<any random string you keep private>
 ```
 
 - `/api/feedback?key=<your key>` — all bug reports and feature suggestions, newest first.
+- `/api/metrics?key=<your key>` — daily funnel counters for the last 14 days
+  (links opened, races started/finished, runs saved, shares, feedback).
 - `/api/health?key=<your key>` — storage backend diagnostics (read/write checks).
   Without the key, `/api/health` only returns `{ "ok": true }`.
 
@@ -91,12 +95,17 @@ scripts/        qa-sim — headless driving test of the real vehicle model
 ### Headless driving QA
 
 ```bash
-./scripts/qa-sim.sh
+./scripts/qa-sim.sh        # vehicle handling scenarios
+./scripts/validate-sim.sh  # anti-cheat: bot race accepted, forged runs rejected
 ```
 
-Runs the actual vehicle/track modules through scripted scenarios (rail hits,
-recovery, mirrored reverse steering, braking, boost, drift, and a full
-keyboard-style lap). Run it after touching `game/vehicle.js`.
+`qa-sim` runs the actual vehicle/track modules through scripted scenarios (rail
+hits, recovery, mirrored reverse steering, braking, boost, drift, and a full
+keyboard-style lap) — run it after touching `game/vehicle.js`. `validate-sim`
+drives a bot through a full race and checks that `validateRun` accepts the
+legitimate result while rejecting forged times, compressed or truncated ghost
+traces, and impossible pickup counts — run it after touching the validator,
+the ghost recording, or vehicle speed limits.
 
 ## Credits
 

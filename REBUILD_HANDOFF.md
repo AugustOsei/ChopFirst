@@ -322,3 +322,32 @@ Known browser warning:
   2 moderate advisories (postcss via next, build-time only — do not run
   `npm audit fix --force`, it downgrades next to 9.x).
 
+### 2026-06-11 round 2 — PB ghost, anti-cheat, funnel metrics
+
+- Personal-best ghost: the PB ghost trace is stored in localStorage with the PB
+  time and raced as a gold ghost on every run. All ghosts are now synced to
+  `car.timeMs` (launch at GO, park at the finish) instead of free-looping on
+  scene time.
+- Ghost bug fixes found along the way: `slice(0, 500)` truncated traces to the
+  first ~45 s of a run — replaced with even decimation across the whole run
+  (`decimateGhost` in RaceGame, mirrored in validate-sim); ghost shells at 0.32
+  opacity were near-invisible in the bright scene — now 0.55 opacity with an
+  emissive glow (this also makes the existing challenge ghosts actually visible).
+- Anti-cheat: `validateRun` in `lib/challenges.js` (imports real track data)
+  rejects runs whose ghost trace is missing, time-inconsistent, speed-impossible
+  (vehicle hard cap is 64 m/s; validator allows 70), or doesn't cover the full
+  course, plus impossible coin/boost counts. Wired into challenge create and
+  run submit (HTTP 422). `scripts/validate-sim.sh` is the repeatable QA:
+  a bot races a real 129 s 3-lap run (accepted) and six forgery styles are
+  rejected.
+- Funnel metrics: POST `/api/track` (allowlisted events, fire-and-forget,
+  always 204) increments per-day counters — Redis HINCRBY per-day hash in
+  production, `data/metrics.json` locally. Owner reads 14 days via
+  `/api/metrics?key=FEEDBACK_ADMIN_KEY`. Client events: link_opened,
+  race_started, race_finished, run_saved, share_whatsapp/sms/copy,
+  feedback_sent (`lib/log-event.js`, keepalive fetch).
+- Caveat: ghost `d` is absolute spline distance (start line is at d=50), and
+  samples are nearest-matched in time — synthetic traces for testing must
+  start at d=50 and sample densely (~real traces: one sample per 90 ms,
+  decimated to ≤500).
+

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import RaceGame from "../components/RaceGame";
 import GuideModal from "../components/GuideModal";
 import FeedbackModal from "../components/FeedbackModal";
+import { logEvent } from "../lib/log-event";
 
 function formatTime(ms) {
   const total = Math.max(0, ms || 0);
@@ -90,6 +91,7 @@ export default function Home() {
   const [showBoard, setShowBoard] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [pb, setPb] = useState(null);
+  const [pbRun, setPbRun] = useState(null);
   const [shareMessage, setShareMessage] = useState("");
   const savePromiseRef = useRef(null);
 
@@ -97,6 +99,7 @@ export default function Home() {
     const id = new URLSearchParams(window.location.search).get("challenge") || "";
     setChallengeId(id);
     if (id) {
+      logEvent("link_opened");
       fetch(`/api/challenges/${id}`)
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
@@ -117,6 +120,12 @@ export default function Home() {
     } catch {
       // corrupted storage — start fresh
     }
+    try {
+      const best = JSON.parse(localStorage.getItem(PB_KEY) || "null");
+      if (best?.ghost?.length) setPbRun({ timeMs: best.timeMs, ghost: best.ghost });
+    } catch {
+      // no PB ghost yet
+    }
   }, []);
 
   useEffect(() => {
@@ -131,11 +140,13 @@ export default function Home() {
   }
 
   function startRace() {
+    logEvent("race_started");
     setResult(null);
     setScreen("race");
   }
 
   function finishRace(run) {
+    logEvent("race_finished");
     let stored = null;
     try {
       stored = JSON.parse(localStorage.getItem(PB_KEY) || "null");
@@ -143,7 +154,15 @@ export default function Home() {
       stored = null;
     }
     const isNew = !stored || run.timeMs < stored.timeMs;
-    if (isNew) localStorage.setItem(PB_KEY, JSON.stringify({ timeMs: run.timeMs, at: Date.now() }));
+    if (isNew) {
+      try {
+        localStorage.setItem(PB_KEY, JSON.stringify({ timeMs: run.timeMs, at: Date.now(), ghost: run.ghost }));
+      } catch {
+        // quota exceeded — keep the time without the ghost trace
+        localStorage.setItem(PB_KEY, JSON.stringify({ timeMs: run.timeMs, at: Date.now() }));
+      }
+      setPbRun({ timeMs: run.timeMs, ghost: run.ghost });
+    }
     setPb({ isNew, previous: stored?.timeMs ?? null });
     setResult(run);
     setScreen("finish");
@@ -170,6 +189,7 @@ export default function Home() {
         upsertTracked({ id: data.id, myTimeMs: run.timeMs, lastSeenRuns: data.runs.length });
         setShareMessage(buildShareMessage(run, target, data.id));
         setStatus("Saved to the leaderboard ✓");
+        logEvent("run_saved");
         return data;
       })
       .catch(() => {
@@ -213,7 +233,7 @@ export default function Home() {
     <main className="app-shell">
       <section className="game-stage">
         {screen === "race" ? (
-          <RaceGame driver={driver} challenge={challenge} onFinish={finishRace} onQuit={() => setScreen("title")} />
+          <RaceGame driver={driver} challenge={challenge} pbRun={pbRun} onFinish={finishRace} onQuit={() => setScreen("title")} />
         ) : (
           <IntroBackdrop variant={screen === "title" ? "title" : "panel"} />
         )}
@@ -307,9 +327,9 @@ export default function Home() {
             <h2>Leaderboard</h2>
             <Leaderboard challenge={challenge} />
             <div className="share-row">
-              <a className="primary link-button" href={`https://wa.me/?text=${shareText}`} target="_blank">WhatsApp</a>
-              <a className="secondary link-button" href={`sms:?&body=${shareText}`}>SMS</a>
-              <button className="secondary" onClick={() => navigator.clipboard.writeText(shareUrl)}>Copy link</button>
+              <a className="primary link-button" href={`https://wa.me/?text=${shareText}`} target="_blank" onClick={() => logEvent("share_whatsapp")}>WhatsApp</a>
+              <a className="secondary link-button" href={`sms:?&body=${shareText}`} onClick={() => logEvent("share_sms")}>SMS</a>
+              <button className="secondary" onClick={() => { navigator.clipboard.writeText(shareUrl); logEvent("share_copy"); }}>Copy link</button>
             </div>
             <div className="button-row">
               <button className="ghost-button" onClick={startRace}>Run it again</button>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { logEvent } from "../lib/log-event";
 
 export default function FeedbackModal({ driverName, onClose }) {
   const [type, setType] = useState("bug");
@@ -18,6 +19,7 @@ export default function FeedbackModal({ driverName, onClose }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, message: text.trim(), contact: contact.trim(), name: driverName || "" }),
       });
+      if (res.ok) logEvent("feedback_sent");
       setState(res.ok ? "sent" : "error");
     } catch {
       setState("error");

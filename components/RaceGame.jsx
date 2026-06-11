@@ -43,7 +43,7 @@ const INITIAL_RACE = {
   debug: null,
 };
 
-export default function RaceGame({ driver, challenge, onFinish, onQuit }) {
+export default function RaceGame({ driver, challenge, pbRun, onFinish, onQuit }) {
   const inputRef = useRef({ left: false, right: false, gas: false, brake: false, handbrake: false, boost: false });
   const [race, setRace] = useState(INITIAL_RACE);
   const [showDebug, setShowDebug] = useState(false);
@@ -82,7 +82,7 @@ export default function RaceGame({ driver, challenge, onFinish, onQuit }) {
         <ambientLight intensity={0.35} />
         <directionalLight position={[40, 70, 25]} intensity={1.6} color="#fff4e0" />
         <Sky sunPosition={[100, 40, 40]} turbidity={8} rayleigh={0.8} />
-        <RaceScene inputRef={inputRef} challenge={challenge} driver={driver} onFinish={onFinish} setRace={setRace} showDebug={showDebug} pausedRef={pausedRef} audio={audio} />
+        <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} onFinish={onFinish} setRace={setRace} showDebug={showDebug} pausedRef={pausedRef} audio={audio} />
       </Canvas>
       <RaceHud race={race} driver={driver} muted={muted} onToggleMute={() => setMuted((value) => !value)} onPause={() => setPaused(true)} />
       <TouchControls controlsRef={inputRef} />
@@ -114,7 +114,7 @@ function PauseOverlay({ onResume, onGuide, onQuit }) {
   );
 }
 
-function RaceScene({ inputRef, challenge, driver, onFinish, setRace, showDebug, pausedRef, audio }) {
+function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, showDebug, pausedRef, audio }) {
   const car = useMemo(() => createVehicleState(), []);
   const carRef = useRef(null);
   const roadMessages = useMemo(
@@ -221,7 +221,7 @@ function RaceScene({ inputRef, challenge, driver, onFinish, setRace, showDebug, 
         coins: car.coins.size,
         driftScore: Math.round(car.driftScore),
         boostUses: car.boostUses,
-        ghost: car.ghost.slice(0, 500),
+        ghost: decimateGhost(car.ghost, 500),
       });
     }
   });
@@ -231,13 +231,23 @@ function RaceScene({ inputRef, challenge, driver, onFinish, setRace, showDebug, 
       <TrackWorld />
       <StartGantry countdownRef={countdownRef} />
       <Pickups collected={car.coins} />
-      <Ghosts challenge={challenge} />
+      <Ghosts challenge={challenge} pbRun={pbRun} car={car} />
       <RaceCar ref={carRef} carState={car} color={driver?.color} />
       <Particles ref={smokeRef} mode="smoke" count={70} />
       <Particles ref={sparksRef} mode="spark" count={60} />
       <Particles ref={skidRef} mode="skid" count={90} />
     </group>
   );
+}
+
+// Keep ghost traces under the wire-size cap by sampling evenly across the
+// whole run (a plain slice would cut off everything after ~45s).
+function decimateGhost(samples, max) {
+  if (samples.length <= max) return samples;
+  const out = [];
+  const step = (samples.length - 1) / (max - 1);
+  for (let i = 0; i < max; i += 1) out.push(samples[Math.round(i * step)]);
+  return out;
 }
 
 function spawnDriveEffects(car, transform, fx, dt, smoke, sparks, skids) {
@@ -1164,17 +1174,26 @@ function Coin({ position }) {
   );
 }
 
-function Ghosts({ challenge }) {
+function Ghosts({ challenge, pbRun, car }) {
   const runs = challenge?.runs?.slice(0, 2) || [];
-  return runs.map((run, index) => <GhostCar key={run.id || index} run={run} color={index ? "#c178ff" : "#61d4ff"} />);
+  return (
+    <>
+      {pbRun?.ghost?.length > 0 && <GhostCar run={pbRun} color="#ffd15c" car={car} />}
+      {runs.map((run, index) => (
+        <GhostCar key={run.id || index} run={run} color={index ? "#c178ff" : "#61d4ff"} car={car} />
+      ))}
+    </>
+  );
 }
 
-function GhostCar({ run, color }) {
+function GhostCar({ run, color, car }) {
   const ref = useRef(null);
-  useFrame(({ clock }) => {
+  useFrame(() => {
     const ghost = run.ghost || [];
     if (!ref.current || !ghost.length) return;
-    const t = (clock.elapsedTime * 1000) % Math.max(1000, run.timeMs || 1000);
+    // synced to race time so it's a true side-by-side race: ghosts launch at
+    // GO and park at the finish line once their run is over (no looping)
+    const t = Math.min(car.timeMs, run.timeMs || Infinity);
     const sample = ghost.reduce((best, item) => (Math.abs((item.t || 0) - t) < Math.abs((best?.t || 0) - t) ? item : best), ghost[0]);
     const distance = sample.d ?? sample.x ?? 0;
     const transform = getGhostTransform(distance, sample.l ?? sample.y ?? 0, sample.h ?? sample.a ?? 0);
@@ -1190,7 +1209,17 @@ function GhostCar({ run, color }) {
 
 function GhostShell({ color }) {
   const material = useMemo(
-    () => new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.32, roughness: 0.35, metalness: 0.3, depthWrite: false }),
+    () =>
+      new THREE.MeshStandardMaterial({
+        color,
+        transparent: true,
+        opacity: 0.55,
+        emissive: color,
+        emissiveIntensity: 0.45,
+        roughness: 0.35,
+        metalness: 0.3,
+        depthWrite: false,
+      }),
     [color],
   );
   return (
