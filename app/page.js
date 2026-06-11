@@ -7,6 +7,7 @@ import FeedbackModal from "../components/FeedbackModal";
 import ChangelogModal from "../components/ChangelogModal";
 import { CURRENT_VERSION } from "../lib/changelog";
 import { logEvent } from "../lib/log-event";
+import { TRACK } from "../game/track";
 
 function formatTime(ms) {
   const total = Math.max(0, ms || 0);
@@ -40,9 +41,14 @@ function compressPhoto(file) {
   });
 }
 
-const PB_KEY = "chopfirst.pb.akina-ridge";
+const PB_KEY = `chopfirst.pb.${TRACK.id}`;
 const DEVICE_KEY = "chopfirst.device";
 const TRACKED_KEY = "chopfirst.challenges";
+
+// Data written before multi-track support has no trackId and is all this track.
+function onThisTrack(challenge) {
+  return !challenge || (challenge.trackId || TRACK.id) === TRACK.id;
+}
 
 function getDeviceId() {
   let id = localStorage.getItem(DEVICE_KEY);
@@ -167,10 +173,10 @@ export default function Home() {
     const isNew = !stored || run.timeMs < stored.timeMs;
     if (isNew) {
       try {
-        localStorage.setItem(PB_KEY, JSON.stringify({ timeMs: run.timeMs, at: Date.now(), ghost: run.ghost }));
+        localStorage.setItem(PB_KEY, JSON.stringify({ trackId: TRACK.id, timeMs: run.timeMs, at: Date.now(), ghost: run.ghost }));
       } catch {
         // quota exceeded — keep the time without the ghost trace
-        localStorage.setItem(PB_KEY, JSON.stringify({ timeMs: run.timeMs, at: Date.now() }));
+        localStorage.setItem(PB_KEY, JSON.stringify({ trackId: TRACK.id, timeMs: run.timeMs, at: Date.now() }));
       }
       setPbRun({ timeMs: run.timeMs, ghost: run.ghost });
     }
@@ -179,13 +185,14 @@ export default function Home() {
     setScreen("finish");
 
     // auto-save so a closed tab can't lose the score; the message is optional and added after
-    const target = challenge?.runs?.[0] ?? null;
+    const target = onThisTrack(challenge) ? challenge?.runs?.[0] ?? null : null;
     setStatus("Saving your run…");
-    const endpoint = challengeId ? `/api/challenges/${challengeId}/runs` : "/api/challenges";
+    // a challenge from another track gets a fresh board instead of mixed times
+    const endpoint = challengeId && onThisTrack(challenge) ? `/api/challenges/${challengeId}/runs` : "/api/challenges";
     savePromiseRef.current = fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...run, deviceId: getDeviceId() }),
+      body: JSON.stringify({ ...run, trackId: TRACK.id, deviceId: getDeviceId() }),
     })
       .then(async (res) => {
         const data = await res.json();
@@ -244,7 +251,7 @@ export default function Home() {
     <main className="app-shell">
       <section className="game-stage">
         {screen === "race" ? (
-          <RaceGame driver={driver} challenge={challenge} pbRun={pbRun} onFinish={finishRace} onQuit={() => setScreen("title")} />
+          <RaceGame driver={driver} challenge={onThisTrack(challenge) ? challenge : null} pbRun={pbRun} onFinish={finishRace} onQuit={() => setScreen("title")} />
         ) : (
           <IntroBackdrop variant={screen === "title" ? "title" : "panel"} />
         )}

@@ -58,6 +58,12 @@ const cases = {
   truncatedGhost: { expect: "reject", got: validateRun({ ...run, ghost: run.ghost.slice(0, 150) }) },
   // expect: rejected — impossible pickup count
   coinFlood: { expect: "reject", got: validateRun({ ...run, coins: 999 }) },
+  // expect: accepted — run explicitly tagged with the current track
+  explicitTrack: { expect: null, got: validateRun({ ...run, trackId: TRACK.id }) },
+  // expect: accepted — legacy client payload with no trackId resolves to the default track
+  legacyNoTrack: { expect: null, got: validateRun({ ...run, trackId: undefined }) },
+  // expect: rejected — a track this server doesn't know
+  unknownTrack: { expect: "reject", got: validateRun({ ...run, trackId: "midnight-bay" }) },
 };
 
 let failed = false;
