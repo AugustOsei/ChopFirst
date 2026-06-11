@@ -380,6 +380,59 @@ input {
   margin-top: 8px;
 }
 
+.button-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.button-row .ghost-button {
+  flex: 1;
+}
+
+/* --- feedback --- */
+
+.feedback-link {
+  display: block;
+  margin: 12px auto 0;
+  border: 0;
+  background: none;
+  color: #b9c6d8;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+
+.feedback-link:hover {
+  color: #ffd15c;
+}
+
+.feedback-types {
+  display: flex;
+  gap: 10px;
+  margin: 16px 0 4px;
+}
+
+.feedback-type {
+  flex: 1;
+  min-height: 44px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .06);
+  color: #d5deea;
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.feedback-type.selected {
+  border-color: #ffd15c;
+  background: rgba(255, 209, 92, .14);
+  color: #ffe8a1;
+}
+
 .panel {
   position: absolute;
   left: clamp(16px, 5vw, 56px);
@@ -446,7 +499,8 @@ h2 {
   font-weight: 700;
 }
 
-input {
+input,
+textarea {
   width: 100%;
   border: 1px solid rgba(255, 255, 255, .2);
   border-radius: 8px;
@@ -454,9 +508,16 @@ input {
   background: rgba(255, 255, 255, .08);
   color: #fff;
   outline: none;
+  font: inherit;
 }
 
-input:focus {
+textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+
+input:focus,
+textarea:focus {
   border-color: #ffd15c;
 }
 

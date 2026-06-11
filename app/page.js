@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import RaceGame from "../components/RaceGame";
 import GuideModal from "../components/GuideModal";
+import FeedbackModal from "../components/FeedbackModal";
 
 function formatTime(ms) {
   const total = Math.max(0, ms || 0);
@@ -87,6 +88,7 @@ export default function Home() {
   const [status, setStatus] = useState("");
   const [showGuide, setShowGuide] = useState(false);
   const [showBoard, setShowBoard] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
   const [pb, setPb] = useState(null);
   const [shareMessage, setShareMessage] = useState("");
   const savePromiseRef = useRef(null);
@@ -195,6 +197,13 @@ export default function Home() {
     setScreen(saved || challenge ? "results" : "title");
   }
 
+  function goHome() {
+    // the auto-save kicked off in finishRace keeps running in the background
+    setMessage("");
+    setStatus("");
+    setScreen("title");
+  }
+
   const shareUrl = typeof window === "undefined" || !challengeId ? "" : `${window.location.origin}/?challenge=${challengeId}`;
   const shareText = encodeURIComponent(
     shareMessage || `🏁 CHOP FIRST — a mountain racing game by August Osei. Beat my time within 24 hours if you can: ${shareUrl}`,
@@ -215,7 +224,8 @@ export default function Home() {
             onStart={() => setScreen("setup")}
             onGuide={() => setShowGuide(true)}
             onBoard={() => setShowBoard(true)}
-            overlayOpen={showGuide || showBoard}
+            onFeedback={() => setShowFeedback(true)}
+            overlayOpen={showGuide || showBoard || showFeedback}
           />
         )}
 
@@ -286,6 +296,7 @@ export default function Home() {
               ))}
             </div>
             <button className="primary" onClick={continueToResults}>Continue to leaderboard</button>
+            <button className="ghost-button back-button" onClick={goHome}>‹ Home</button>
             {status && <p className="status">{status}</p>}
           </Panel>
         )}
@@ -300,12 +311,17 @@ export default function Home() {
               <a className="secondary link-button" href={`sms:?&body=${shareText}`}>SMS</a>
               <button className="secondary" onClick={() => navigator.clipboard.writeText(shareUrl)}>Copy link</button>
             </div>
-            <button className="ghost-button" onClick={startRace}>Run it again</button>
+            <div className="button-row">
+              <button className="ghost-button" onClick={startRace}>Run it again</button>
+              <button className="ghost-button" onClick={goHome}>Home</button>
+            </div>
+            <button className="feedback-link" onClick={() => setShowFeedback(true)}>🐞 Report a bug or suggest a feature</button>
           </Panel>
         )}
 
         {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
         {showBoard && <GlobalBoard onClose={() => setShowBoard(false)} />}
+        {showFeedback && <FeedbackModal driverName={driver.name} onClose={() => setShowFeedback(false)} />}
       </section>
     </main>
   );
@@ -468,7 +484,7 @@ function FinishVerdict({ result, challenge, pb }) {
   );
 }
 
-function TitleScreen({ challenge, onStart, onGuide, onBoard, overlayOpen }) {
+function TitleScreen({ challenge, onStart, onGuide, onBoard, onFeedback, overlayOpen }) {
   const [bestTime, setBestTime] = useState(null);
   useEffect(() => {
     try {
@@ -518,6 +534,7 @@ function TitleScreen({ challenge, onStart, onGuide, onBoard, overlayOpen }) {
         <div className="title-links title-fade" style={{ animationDelay: "1.15s" }}>
           <button className="title-guide" onClick={onGuide}>How to play</button>
           <button className="title-guide" onClick={onBoard}>🏆 Global leaderboard</button>
+          <button className="title-guide" onClick={onFeedback}>💬 Feedback</button>
         </div>
       </div>
       <footer className="title-credits title-fade" style={{ animationDelay: "1.3s" }}>
