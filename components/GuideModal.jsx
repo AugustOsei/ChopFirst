@@ -44,9 +44,9 @@ export default function GuideModal({ onClose }) {
         <section className="guide-section">
           <h3>On the mountain</h3>
           <ul className="guide-tips">
-            <li><b>Boost</b> — 3 charges per run. Best on straights; the pips above the controls show charges and cooldown.</li>
+            <li><b>Boost</b> — start with 3 charges; every 15 coins banks another (max 5 stocked). Best on straights; the pips show charges and cooldown.</li>
             <li><b>Drift</b> — hold the handbrake into a corner to slide and build drift score. Counter-steer to recover.</li>
-            <li><b>Coins</b> — placed off the racing line. Risk the detour or keep your pace.</li>
+            <li><b>Coins</b> — lines and arcs trace the fast line, clusters sit off it; they return every lap. Collect 15 for an extra boost.</li>
             <li><b>Rails</b> — glancing hits scrape speed off; head-on hits stop you. Steer away from the rail (or reverse out) to recover.</li>
             <li><b>Reverse</b> — stop, then keep holding brake. The car backs and steers like a real car.</li>
             <li><b>Ghosts</b> — a gold ghost races your personal best on every run; on a challenge link, blue and purple ghosts replay your rivals&apos; best runs.</li>

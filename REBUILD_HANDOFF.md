@@ -375,3 +375,19 @@ Known browser warning:
   with zero input (spoofed matchMedia), holding brake reverses (−2.5 m/s) and
   releasing resumes auto-throttle.
 
+### 2026-06-11 round 4 — coin runs + boost economy
+
+- PICKUPS rebuilt as Sonic-style patterns via coinLine/coinArc generators in
+  game/track.js: 41 coins per lap — lines on straights, arcs sweeping corners
+  toward the racing line, two risky off-line clusters (lateral ±2.7).
+- Coins respawn every lap: collected keys in car.coins are lap-scoped
+  (lap * 1000 + index) in both vehicle pickup checks and the Pickups renderer.
+- Economy: every 15 coins banks +1 boost charge, capped at 5 stocked
+  (COINS_PER_BOOST / MAX_BOOST_CHARGES exported from game/vehicle.js).
+  car.boostsEarned tracks thresholds; HUD shows 5 pips; "+1 BOOST" reuses the
+  lap-banner slot; coin chime fires automatically (audio keys off coins.size).
+- Validator: coins ≤ PICKUPS.length × laps (123); boostUses ≤ 3 + floor(coins/15).
+  Both sims green — the center-line bot now collects 66 coins per race.
+- Tuning note: if 15 feels too generous (bot banks 4 bonus boosts driving the
+  center line), raise COINS_PER_BOOST — the validator follows automatically.
+

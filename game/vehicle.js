@@ -23,6 +23,10 @@ const DRIFT_GRIP = 2.8;
 const LOW_SPEED_GRIP_BONUS = 6; // extra grip below ~9 m/s so the car never ice-skates at parking speed
 const BOOST_DURATION = 1.5;
 const BOOST_COOLDOWN = 2.2;
+// Coin economy: coins respawn every lap; every COINS_PER_BOOST collected banks
+// an extra boost charge, up to MAX_BOOST_CHARGES stocked at once.
+export const COINS_PER_BOOST = 15;
+export const MAX_BOOST_CHARGES = 5;
 const RAIL_RESTITUTION = 0.14;
 const CAR_HALF_WIDTH = 1.1;
 const RAIL_LIMIT = TRACK.railOffset - CAR_HALF_WIDTH - 0.2;
@@ -56,6 +60,7 @@ export function createVehicleState() {
     boostTimer: 0,
     boostCooldown: 0,
     boostUses: 0,
+    boostsEarned: 0,
     driftScore: 0,
     coins: new Set(),
     timeMs: 0,
@@ -217,13 +222,21 @@ export function updateVehicle(car, input, dt) {
     car.startGatePassed = true;
   }
 
+  // coins respawn each lap: collected keys are lap-scoped
   PICKUPS.forEach((pickup, index) => {
-    if (car.coins.has(index)) return;
+    const key = car.lap * 1000 + index;
+    if (car.coins.has(key)) return;
     const delta = Math.abs(shortDistance(car.distance, pickup.distance, trackLength));
     if (delta < 4.2 && Math.abs(car.lateral - pickup.lateral) < 1.35) {
-      car.coins.add(index);
+      car.coins.add(key);
     }
   });
+
+  const earnedBoosts = Math.floor(car.coins.size / COINS_PER_BOOST);
+  if (earnedBoosts > car.boostsEarned) {
+    car.boostCharges = Math.min(MAX_BOOST_CHARGES, car.boostCharges + (earnedBoosts - car.boostsEarned));
+    car.boostsEarned = earnedBoosts;
+  }
 
   if (car.drifting && Math.abs(fwd) > 12) {
     car.driftScore += Math.round((Math.abs(side) * 1.7 + Math.abs(car.yawVelocity) * 6) * dt * 10) / 10;

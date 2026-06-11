@@ -95,7 +95,7 @@ export default function RaceHud({ race, driver, muted, onToggleMute, onPause }) 
       <div className="boost-meter">
         <small>BOOST</small>
         <div className="boost-pips">
-          {[0, 1, 2].map((index) => (
+          {[0, 1, 2, 3, 4].map((index) => (
             <span key={index} className={`pip${index < race.boosts ? " full" : ""}${boosting && index === race.boosts ? " firing" : ""}`} />
           ))}
         </div>

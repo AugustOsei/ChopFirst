@@ -293,17 +293,32 @@ export function createShoulderGeometry(side, sampleCount = 420) {
   return geometry;
 }
 
+// Coin layout: Sonic-style runs instead of lone scattered coins. Lines sit on
+// the straights, arcs sweep across corners (chasing them teaches the racing
+// line), and a few short off-line clusters keep the risky detour alive.
+function coinLine(pctFrom, pctTo, count, lateral) {
+  return Array.from({ length: count }, (_, i) => ({
+    pct: pctFrom + ((pctTo - pctFrom) * i) / Math.max(1, count - 1),
+    lateral,
+  }));
+}
+
+function coinArc(pctFrom, pctTo, count, lateralFrom, lateralTo) {
+  return Array.from({ length: count }, (_, i) => {
+    const t = i / Math.max(1, count - 1);
+    return { pct: pctFrom + (pctTo - pctFrom) * t, lateral: lateralFrom + (lateralTo - lateralFrom) * t };
+  });
+}
+
 export const PICKUPS = [
-  { pct: 0.08, lateral: -1.8 },
-  { pct: 0.15, lateral: 1.7 },
-  { pct: 0.23, lateral: -2.6 },
-  { pct: 0.31, lateral: 2.5 },
-  { pct: 0.39, lateral: 0.6 },
-  { pct: 0.47, lateral: -2.8 },
-  { pct: 0.55, lateral: 2.6 },
-  { pct: 0.63, lateral: -1.4 },
-  { pct: 0.71, lateral: 1.9 },
-  { pct: 0.79, lateral: -2.7 },
-  { pct: 0.87, lateral: 2.8 },
-  { pct: 0.94, lateral: -0.9 },
+  ...coinLine(0.04, 0.085, 5, 0), // launch straight, dead center
+  ...coinArc(0.12, 0.18, 4, 1.6, -2.0), // easy right, sweep to the inside
+  ...coinLine(0.21, 0.235, 3, 2.7), // risky outside cluster
+  ...coinArc(0.28, 0.34, 4, -1.8, 1.8), // medium left
+  ...coinLine(0.4, 0.45, 4, -0.7), // approach straight
+  ...coinArc(0.5, 0.56, 4, 2.2, -2.2), // summit hairpin
+  ...coinLine(0.6, 0.62, 3, -2.7), // risky outside cluster
+  ...coinArc(0.66, 0.74, 5, -2.0, 2.0), // S-chicane sweep
+  ...coinLine(0.8, 0.86, 5, 0.6), // recovery straight
+  ...coinArc(0.9, 0.95, 4, -1.4, 1.4), // final sweeper
 ].map((pickup) => ({ distance: pickup.pct * totalLength, lateral: pickup.lateral }));

@@ -128,7 +128,7 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
     () => (challenge?.messages || []).filter((note) => note.message).slice(-8),
     [challenge],
   );
-  const flowRef = useRef({ lastLap: 0, banner: null, msgIndex: 0, msg: null, wrongWayTime: 0 });
+  const flowRef = useRef({ lastLap: 0, banner: null, msgIndex: 0, msg: null, wrongWayTime: 0, lastBoostsEarned: 0 });
   const smokeRef = useRef(null);
   const sparksRef = useRef(null);
   const skidRef = useRef(null);
@@ -167,6 +167,10 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
         text: car.lap === TRACK.laps - 1 ? "FINAL LAP" : `LAP ${car.lap + 1} / ${TRACK.laps}`,
         until: car.timeMs + 2400,
       };
+    }
+    if (car.boostsEarned > flow.lastBoostsEarned) {
+      flow.lastBoostsEarned = car.boostsEarned;
+      flow.banner = { id: `boost-${car.boostsEarned}`, text: "+1 BOOST", until: car.timeMs + 1600 };
     }
     if (flow.msgIndex < roadMessages.length) {
       const total = Math.min(1, raceProgress(car, trackLength) / (TRACK.laps * trackLength));
@@ -241,7 +245,7 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
     <group>
       <TrackWorld />
       <StartGantry countdownRef={countdownRef} />
-      <Pickups collected={car.coins} />
+      <Pickups collected={car.coins} lap={Math.min(TRACK.laps - 1, car.lap)} />
       <Ghosts challenge={challenge} pbRun={pbRun} car={car} />
       <RaceCar ref={carRef} carState={car} color={driver?.color} />
       <Particles ref={smokeRef} mode="smoke" count={70} />
@@ -1163,9 +1167,9 @@ const Particles = forwardRef(function Particles({ mode = "smoke", count = 64 }, 
 
 /* ------------------------------ pickups/ghosts ------------------------------ */
 
-function Pickups({ collected }) {
+function Pickups({ collected, lap }) {
   return PICKUPS.map((pickup, index) => {
-    if (collected.has(index)) return null;
+    if (collected.has(lap * 1000 + index)) return null;
     const position = pointAt(pickup.distance, pickup.lateral);
     position.y += 1.05;
     return <Coin key={index} position={position} />;

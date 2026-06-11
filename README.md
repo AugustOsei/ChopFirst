@@ -15,6 +15,8 @@ for the next drivers on your challenge link.
 - **Arcade handling** — kinematic bicycle model with signed reverse, controllable
   handbrake drifts, rail scrapes with sparks, and forgiving recovery.
 - **Boost** — three charges per run with flames, FOV kick, and screen streaks.
+- **Coin runs** — Sonic-style coin lines and arcs trace the racing line and respawn
+  every lap; every 15 coins banks an extra boost charge (max 5 stocked).
 - **24-hour challenges** — shareable links, leaderboard, ghost cars replaying rivals' runs.
 - **Personal-best ghost** — a gold ghost replays your fastest run on every race, synced to the start.
 - **Verified times** — runs are validated server-side against their ghost trace, so leaderboard times can't be forged with a curl one-liner.
