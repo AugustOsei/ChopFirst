@@ -29,13 +29,16 @@ for the next drivers on your challenge link.
 
 | Action | Keyboard | Touch |
 | --- | --- | --- |
-| Accelerate | `W` / `↑` | GAS |
-| Brake / reverse | `S` / `↓` | REV |
+| Accelerate | `W` / `↑` | automatic |
+| Brake / reverse | `S` / `↓` | BRAKE |
 | Steer | `A` `D` / `←` `→` | ‹ › |
 | Drift (handbrake) | `Shift` | DRIFT |
 | Boost | `Space` | BOOST |
 | Pause | `Esc` / `P` | ❚❚ |
 | Debug overlay | `F3` | — |
+
+On touch devices the throttle is automatic — the car launches at GO and the
+player steers, brakes, drifts, and boosts. Keyboard play keeps manual throttle.
 
 ## Getting started
 

@@ -30,9 +30,9 @@ export default function GuideModal({ onClose }) {
             <div>
               <h4>Touch (phones &amp; tablets)</h4>
               <ul>
+                <li><b>Auto-throttle</b> — the car accelerates by itself</li>
                 <li><b>‹ ›</b> bottom-left — steer</li>
-                <li><b>GAS</b> — accelerate</li>
-                <li><b>REV</b> — brake, hold to reverse</li>
+                <li><b>BRAKE</b> — slow down, hold to reverse</li>
                 <li><b>DRIFT</b> — handbrake slide</li>
                 <li><b>BOOST</b> — fire a boost charge</li>
                 <li><b>❚❚</b> top-left — pause</li>

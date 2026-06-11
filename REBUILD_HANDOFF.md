@@ -351,3 +351,27 @@ Known browser warning:
   start at d=50 and sample densely (~real traces: one sample per 90 ms,
   decimated to ≤500).
 
+### 2026-06-11 round 3 — mobile controls rework
+
+- iPhone tap problems diagnosed as three compounding issues: no viewport lock
+  (double-tap zoom hijacked rapid taps), selectable button text (long-press
+  triggered the iOS magnifier loupe), and the GAS button requiring a 2-minute
+  hold (guaranteed long-press misfires + thumb fatigue).
+- Fixes: `viewport` export in app/layout.js (maximum-scale=1, user-scalable=no,
+  viewport-fit=cover); global CSS `user-select: none` + `-webkit-touch-callout:
+  none` on body with inputs/textareas re-enabled, `-webkit-tap-highlight-color:
+  transparent`, `touch-action: manipulation` on all buttons; `preventDefault()`
+  on pointerdown + onContextMenu suppression in TouchControls.
+- Auto-throttle on touch devices: `inputRef.current.autoGas` set from the
+  inverse of the same media query that shows touch controls
+  (`(hover: hover) and (pointer: fine)`); applied in the RaceScene frame loop —
+  gas forced on unless brake is held (brake/reverse still work). Keyboard play
+  is unchanged.
+- Touch layout is now 2+3: steer ‹ › left; BOOST, DRIFT, BRAKE right, with
+  BRAKE the big rightmost button (`.gas` CSS removed, `.brake` promoted).
+  Guide modal + README updated.
+- Verified in preview: viewport meta present, body user-select none (inputs
+  still selectable), new button set renders, auto-gas drives the car from GO
+  with zero input (spoofed matchMedia), holding brake reverses (−2.5 m/s) and
+  releasing resumes auto-throttle.
+

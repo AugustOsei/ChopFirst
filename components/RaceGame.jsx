@@ -57,6 +57,13 @@ export default function RaceGame({ driver, challenge, pbRun, onFinish, onQuit })
   useKeyboard(inputRef, setShowDebug, setPaused);
 
   useEffect(() => {
+    // Touch players get automatic throttle (mirrors the media query that shows
+    // the touch controls): holding a GAS button for a whole run was the main
+    // source of iOS long-press misfires and thumb fatigue.
+    inputRef.current.autoGas = !window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  }, [inputRef]);
+
+  useEffect(() => {
     audio.setMuted(muted);
     if (typeof window !== "undefined") localStorage.setItem("chopfirst.muted", muted ? "1" : "0");
   }, [audio, muted]);
@@ -145,7 +152,11 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
     if (finishedRef.current || pausedRef.current) return;
     const dt = Math.min(0.033, delta);
     countdownRef.current = Math.max(-1, countdownRef.current - dt);
-    if (countdownRef.current <= 0) updateVehicle(car, inputRef.current, dt);
+    if (countdownRef.current <= 0) {
+      const input = inputRef.current;
+      // auto-throttle yields to the brake so braking and reversing still work
+      updateVehicle(car, input.autoGas && !input.brake ? { ...input, gas: true } : input, dt);
+    }
     const transform = getVehicleTransform(car);
 
     const flow = flowRef.current;
@@ -1260,6 +1271,8 @@ function getGhostTransform(distance, lateral, headingError) {
 function TouchControls({ controlsRef }) {
   const bind = (key) => ({
     onPointerDown: (event) => {
+      // preventDefault blocks iOS long-press selection/magnifier on held buttons
+      event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
       controlsRef.current[key] = true;
     },
@@ -1274,17 +1287,17 @@ function TouchControls({ controlsRef }) {
     },
   });
 
+  // throttle is automatic on touch — left thumb steers, right thumb brakes/drifts/boosts
   return (
-    <div className="touch-controls race-controls">
+    <div className="touch-controls race-controls" onContextMenu={(event) => event.preventDefault()}>
       <div className="steer-pad">
         <button aria-label="Steer left" {...bind("left")}>‹</button>
         <button aria-label="Steer right" {...bind("right")}>›</button>
       </div>
       <div className="drive-pad">
-        <button aria-label="Brake or reverse" className="brake" {...bind("brake")}>REV</button>
-        <button aria-label="Handbrake" className="handbrake" {...bind("handbrake")}>DRIFT</button>
         <button aria-label="Boost" className="boost" {...bind("boost")}>BOOST</button>
-        <button aria-label="Accelerate" className="gas" {...bind("gas")}>GAS</button>
+        <button aria-label="Handbrake" className="handbrake" {...bind("handbrake")}>DRIFT</button>
+        <button aria-label="Brake or reverse" className="brake" {...bind("brake")}>BRAKE</button>
       </div>
     </div>
   );

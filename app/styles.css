@@ -7,6 +7,7 @@
 
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 html,
@@ -15,11 +16,26 @@ body {
   min-height: 100%;
   margin: 0;
   overflow: hidden;
+  /* game UI: no text selection or iOS long-press magnifier/callout anywhere */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 button,
 input {
   font: inherit;
+}
+
+button {
+  /* kill the 300ms double-tap-zoom gesture on every button */
+  touch-action: manipulation;
 }
 
 .app-shell {
@@ -1068,14 +1084,9 @@ textarea:focus {
   color: #fff;
 }
 
-.touch-controls .gas {
+.touch-controls .brake {
   width: 76px;
   height: 76px;
-  background: rgba(40, 205, 109, .88);
-  color: #06150b;
-}
-
-.touch-controls .brake {
   background: rgba(255, 69, 58, .85);
   color: #fff8f7;
 }
@@ -1727,7 +1738,7 @@ kbd {
     height: 62px;
   }
 
-  .touch-controls .gas {
+  .touch-controls .brake {
     width: 68px;
     height: 68px;
   }

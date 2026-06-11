@@ -1,5 +1,15 @@
 import "./styles.css";
 
+// Lock the viewport: double-tap and pinch zoom hijack rapid taps on the race
+// controls (iOS especially). viewport-fit covers the notch on landscape phones.
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+};
+
 export const metadata = {
   title: "CHOP FIRST — 24-hour touge time attack",
   description:
