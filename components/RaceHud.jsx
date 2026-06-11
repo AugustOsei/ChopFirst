@@ -1,10 +1,41 @@
+import { useEffect, useRef, useState } from "react";
 import { MINIMAP } from "../game/track";
 
 const GAUGE_MAX_KMH = 240;
 const GAUGE_SWEEP_DEG = 264;
 
+// Touch has no reverse button — surface the hold-brake gesture the first time
+// the car sits stopped mid-race (usually pinned against a rail).
+function useReverseHint(race) {
+  const [show, setShow] = useState(false);
+  const shownRef = useRef(false);
+  const stillSince = useRef(null);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    if (shownRef.current) return;
+    if (!window.matchMedia("(hover: none)").matches) return;
+    const racing = race.countdown <= 0 && race.timeMs > 4000;
+    const stopped = Math.abs(race.speed) < 1.5;
+    if (!racing || !stopped || race.reversing) {
+      stillSince.current = null;
+      return;
+    }
+    if (stillSince.current === null) stillSince.current = race.timeMs;
+    if (race.timeMs - stillSince.current > 1600) {
+      shownRef.current = true;
+      setShow(true);
+      timerRef.current = setTimeout(() => setShow(false), 4000);
+    }
+  }, [race]);
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+  return show;
+}
+
 export default function RaceHud({ race, driver, muted, onToggleMute, onPause }) {
   const kmh = Math.round(Math.abs(race.speed) * 3.6);
+  const reverseHint = useReverseHint(race);
   const gaugeRatio = Math.min(1, kmh / GAUGE_MAX_KMH);
   const boosting = race.boostTimer > 0;
   const speedHeat = Math.min(1, Math.max(0, kmh - 110) / 110);
@@ -75,6 +106,8 @@ export default function RaceHud({ race, driver, muted, onToggleMute, onPause }) 
       </div>
 
       {race.wrongWay && <div className="wrong-way">WRONG WAY</div>}
+
+      {reverseHint && <div className="reverse-hint">Hold <b>BRAKE</b> to reverse out</div>}
 
       <div className="speedo">
         <div
