@@ -36,6 +36,8 @@ const INITIAL_RACE = {
   reversing: false,
   progress: 0,
   countdown: 3,
+  position: null,
+  racers: 1,
   banner: null,
   roadMessage: null,
   wrongWay: false,
@@ -43,7 +45,7 @@ const INITIAL_RACE = {
   debug: null,
 };
 
-export default function RaceGame({ driver, challenge, pbRun, onFinish, onQuit }) {
+export default function RaceGame({ driver, challenge, pbRun, rivals, onFinish, onQuit }) {
   const inputRef = useRef({ left: false, right: false, gas: false, brake: false, handbrake: false, boost: false });
   const [race, setRace] = useState(INITIAL_RACE);
   const [showDebug, setShowDebug] = useState(false);
@@ -89,7 +91,7 @@ export default function RaceGame({ driver, challenge, pbRun, onFinish, onQuit })
         <ambientLight intensity={0.35} />
         <directionalLight position={[40, 70, 25]} intensity={1.6} color="#fff4e0" />
         <Sky sunPosition={[100, 40, 40]} turbidity={8} rayleigh={0.8} />
-        <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} onFinish={onFinish} setRace={setRace} showDebug={showDebug} pausedRef={pausedRef} audio={audio} />
+        <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} rivals={rivals} driver={driver} onFinish={onFinish} setRace={setRace} showDebug={showDebug} pausedRef={pausedRef} audio={audio} />
       </Canvas>
       <RaceHud race={race} driver={driver} muted={muted} onToggleMute={() => setMuted((value) => !value)} onPause={() => setPaused(true)} />
       <TouchControls controlsRef={inputRef} boosts={race.boosts} />
@@ -129,9 +131,15 @@ function PauseOverlay({ onResume, onGuide, onQuit }) {
   );
 }
 
-function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, showDebug, pausedRef, audio }) {
+function RaceScene({ inputRef, challenge, pbRun, rivals, driver, onFinish, setRace, showDebug, pausedRef, audio }) {
   const car = useMemo(() => createVehicleState(), []);
   const carRef = useRef(null);
+  // Mutable per-rival replay state, shared between the RivalCar frames (which
+  // advance it) and the snapshot/finish logic here (which ranks against it).
+  const rivalsState = useMemo(
+    () => (rivals || []).map((run) => ({ run, t: 0, lastPlayerMs: 0, prog: -10, finishedAtMs: null })),
+    [rivals],
+  );
   const roadMessages = useMemo(
     () => (challenge?.messages || []).filter((note) => note.message).slice(-8),
     [challenge],
@@ -148,13 +156,15 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
   const { camera } = useThree();
   const trackLength = getTrackLength();
 
-  // Debug hook for manual/scripted driving QA.
+  // Debug hooks for manual/scripted driving QA.
   useEffect(() => {
     window.__carState = car;
+    window.__rivals = rivalsState;
     return () => {
       if (window.__carState === car) delete window.__carState;
+      if (window.__rivals === rivalsState) delete window.__rivals;
     };
-  }, [car]);
+  }, [car, rivalsState]);
 
   useFrame((_, delta) => {
     if (finishedRef.current || pausedRef.current) return;
@@ -203,6 +213,7 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
 
     snapshotClock.current += dt;
     if (snapshotClock.current > 0.08) {
+      const playerProgress = raceProgress(car, trackLength);
       setRace({
         lap: Math.min(TRACK.laps - 1, car.lap),
         timeMs: car.timeMs,
@@ -214,7 +225,9 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
         boostCooldown: car.boostCooldown,
         drifting: car.drifting,
         reversing: car.reversing,
-        progress: Math.min(1, raceProgress(car, trackLength) / (TRACK.laps * trackLength)),
+        position: rivalsState.length ? 1 + rivalsState.filter((rival) => rival.prog > playerProgress).length : null,
+        racers: rivalsState.length + 1,
+        progress: Math.min(1, playerProgress / (TRACK.laps * trackLength)),
         countdown: countdownRef.current,
         banner: flow.banner && car.timeMs < flow.banner.until ? flow.banner : null,
         roadMessage: flow.msg && car.timeMs < flow.msg.until ? flow.msg : null,
@@ -245,6 +258,13 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
         driftScore: Math.round(car.driftScore),
         boostUses: car.boostUses,
         ghost: decimateGhost(car.ghost, 500),
+        // rival placement is display-only — the server's normalizeRun drops it
+        placement: rivalsState.length ? 1 + rivalsState.filter((rival) => rival.finishedAtMs !== null).length : null,
+        rivalResults: rivalsState.map((rival) => ({
+          name: rival.run.name,
+          color: rival.run.color,
+          timeMs: rival.finishedAtMs,
+        })),
       });
     }
   });
@@ -255,6 +275,7 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
       <StartGantry countdownRef={countdownRef} />
       <Pickups collected={car.coins} lap={Math.min(TRACK.laps - 1, car.lap)} />
       <Ghosts challenge={challenge} pbRun={pbRun} car={car} />
+      <RivalCars rivals={rivalsState} car={car} trackLength={trackLength} />
       <RaceCar ref={carRef} carState={car} color={driver?.color} />
       <Particles ref={smokeRef} mode="smoke" count={70} />
       <Particles ref={sparksRef} mode="spark" count={60} />
@@ -1262,6 +1283,94 @@ function GhostShell({ color }) {
       {[-0.88, 0.88].map((x) =>
         [-1.32, 1.32].map((z) => (
           <mesh key={`${x}${z}`} material={material} position={[x, 0.34, z]} rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.34, 0.34, 0.28, 10]} />
+          </mesh>
+        )),
+      )}
+    </group>
+  );
+}
+
+// Interpolated trace lookup (samples are ~0.3–0.5s apart after decimation, so
+// nearest-sample replay visibly teleports on solid cars).
+function sampleGhost(ghost, t) {
+  if (!ghost?.length) return null;
+  if (t <= ghost[0].t) return ghost[0];
+  const last = ghost[ghost.length - 1];
+  if (t >= last.t) return last;
+  let lo = 0;
+  let hi = ghost.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (ghost[mid].t <= t) lo = mid;
+    else hi = mid;
+  }
+  const a = ghost[lo];
+  const b = ghost[hi];
+  const k = (t - a.t) / (b.t - a.t || 1);
+  return { t, d: a.d + (b.d - a.d) * k, l: a.l + (b.l - a.l) * k, h: a.h + (b.h - a.h) * k };
+}
+
+function RivalCars({ rivals, car, trackLength }) {
+  return rivals.map((state) => <RivalCar key={state.run.id} state={state} car={car} trackLength={trackLength} />);
+}
+
+function RivalCar({ state, car, trackLength }) {
+  const ref = useRef(null);
+  useFrame(() => {
+    if (!ref.current) return;
+    const { run } = state;
+    // clock is driven off the player's race clock, so countdown, pause, and
+    // the finish all freeze rivals for free
+    const dtMs = car.timeMs - state.lastPlayerMs;
+    state.lastPlayerMs = car.timeMs;
+    if (dtMs > 0 && state.finishedAtMs === null) {
+      // gentle rubber band: rivals ease off when ahead, push when behind
+      const gap = state.prog - raceProgress(car, trackLength);
+      const rate = THREE.MathUtils.clamp(1 - gap * 0.0007, 0.94, 1.05);
+      state.t += dtMs * rate;
+      if (state.t >= run.timeMs) {
+        state.t = run.timeMs;
+        state.finishedAtMs = car.timeMs;
+      }
+    }
+    const sample = sampleGhost(run.ghost, state.t);
+    if (!sample) return;
+    state.prog = sample.d - TRACK.startDistance;
+    const transform = getGhostTransform(sample.d, sample.l, sample.h);
+    ref.current.position.copy(transform.position);
+    ref.current.rotation.set(0, transform.yaw, 0);
+    state.worldPos = [transform.position.x, transform.position.y, transform.position.z];
+  });
+  return (
+    <group ref={ref}>
+      <RivalShell color={state.run.color} />
+    </group>
+  );
+}
+
+// Solid-bodied sibling of GhostShell: rivals are real opponents, not replays,
+// so they get opaque paint and dark trim instead of the translucent glow.
+function RivalShell({ color }) {
+  const paint = useMemo(() => new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.35 }), [color]);
+  const trim = useMemo(() => new THREE.MeshStandardMaterial({ color: "#14181d", roughness: 0.5 }), []);
+  return (
+    <group>
+      <mesh material={paint} castShadow position={[0, 0.55, -0.15]}>
+        <boxGeometry args={[1.94, 0.42, 3.4]} />
+      </mesh>
+      <mesh material={paint} castShadow position={[0, 0.52, 1.72]} rotation={[0.1, 0, 0]}>
+        <boxGeometry args={[1.84, 0.34, 1.3]} />
+      </mesh>
+      <mesh material={trim} castShadow position={[0, 0.96, -0.35]}>
+        <boxGeometry args={[1.5, 0.48, 1.45]} />
+      </mesh>
+      <mesh material={paint} position={[0, 1.15, -2.0]}>
+        <boxGeometry args={[1.9, 0.07, 0.45]} />
+      </mesh>
+      {[-0.88, 0.88].map((x) =>
+        [-1.32, 1.32].map((z) => (
+          <mesh key={`${x}${z}`} material={trim} position={[x, 0.34, z]} rotation={[0, 0, Math.PI / 2]}>
             <cylinderGeometry args={[0.34, 0.34, 0.28, 10]} />
           </mesh>
         )),
