@@ -102,15 +102,23 @@ export default function RaceGame({ driver, challenge, pbRun, onFinish, onQuit })
 }
 
 function PauseOverlay({ onResume, onGuide, onQuit }) {
+  const touch = typeof window !== "undefined" && !window.matchMedia("(hover: hover) and (pointer: fine)").matches;
   return (
     <div className="pause-overlay">
       <div className="pause-card">
         <p className="eyebrow">Paused</p>
         <h2 className="pause-title">CHOP FIRST</h2>
-        <ul className="pause-hints">
-          <li><kbd>W</kbd>/<kbd>↑</kbd> gas · <kbd>S</kbd>/<kbd>↓</kbd> brake &amp; reverse</li>
-          <li><kbd>Shift</kbd> drift · <kbd>Space</kbd> boost · <kbd>Esc</kbd> pause</li>
-        </ul>
+        {touch ? (
+          <ul className="pause-hints">
+            <li>Auto-throttle — steer with <b>‹ ›</b></li>
+            <li><b>BRAKE</b> hold to reverse · <b>DRIFT</b> slides · <b>BOOST</b> fires</li>
+          </ul>
+        ) : (
+          <ul className="pause-hints">
+            <li><kbd>W</kbd>/<kbd>↑</kbd> gas · <kbd>S</kbd>/<kbd>↓</kbd> brake &amp; reverse</li>
+            <li><kbd>Shift</kbd> drift · <kbd>Space</kbd> boost · <kbd>Esc</kbd> pause</li>
+          </ul>
+        )}
         <button className="primary" onClick={onResume}>Resume</button>
         <div className="pause-row">
           <button className="secondary" onClick={onGuide}>How to play</button>
