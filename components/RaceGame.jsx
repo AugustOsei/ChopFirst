@@ -1280,6 +1280,28 @@ function getGhostTransform(distance, lateral, headingError) {
 
 /* --------------------------------- controls --------------------------------- */
 
+function SteerArrows({ dir }) {
+  return (
+    <svg
+      viewBox="0 0 68 76"
+      width="68"
+      height="76"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={dir === "right" ? { transform: "scaleX(-1)" } : undefined}
+      aria-hidden
+    >
+      <path d="M26 6 10 38l16 32" />
+      <path d="M38 6 22 38l16 32" opacity=".58" />
+      <path d="M50 6 34 38l16 32" opacity=".32" />
+      <path d="M62 6 46 38l16 32" opacity=".14" />
+    </svg>
+  );
+}
+
 function DriftIcon() {
   return (
     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
@@ -1387,7 +1409,7 @@ function TouchControls({ controlsRef, boosts }) {
           <DriftIcon />
           <span>DRIFT</span>
         </button>
-        <button type="button" className="t-steer" aria-label="Steer left" data-control="left">‹</button>
+        <button type="button" className="t-steer" aria-label="Steer left" data-control="left"><SteerArrows dir="left" /></button>
       </div>
       <div className="center-cluster">
         <button type="button" className={`t-boost${boosts <= 0 ? " empty" : ""}`} aria-label={`Boost, ${boosts} charges left`} data-control="boost">
@@ -1404,7 +1426,7 @@ function TouchControls({ controlsRef, boosts }) {
           <DriftIcon />
           <span>DRIFT</span>
         </button>
-        <button type="button" className="t-steer" aria-label="Steer right" data-control="right">›</button>
+        <button type="button" className="t-steer" aria-label="Steer right" data-control="right"><SteerArrows dir="right" /></button>
       </div>
     </div>
   );

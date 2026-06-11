@@ -1114,10 +1114,6 @@ textarea:focus {
   width: 86px;
   height: 112px;
   border-radius: 24px;
-  font-size: 52px;
-  font-weight: 800;
-  line-height: 1;
-  padding-bottom: 8px;
 }
 
 .t-drift {
