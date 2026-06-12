@@ -674,6 +674,34 @@ textarea:focus {
   pointer-events: none;
 }
 
+.delta-timer {
+  position: absolute;
+  top: 108px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 12px 4px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 999px;
+  background: rgba(13, 19, 27, .72);
+  color: #cfd8df;
+  font-size: 15px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .03em;
+  pointer-events: none;
+  backdrop-filter: blur(10px);
+}
+
+.delta-timer.ahead {
+  color: #51e08f;
+  border-color: rgba(81, 224, 143, .35);
+}
+
+.delta-timer.behind {
+  color: #ff6b5e;
+  border-color: rgba(255, 107, 94, .35);
+}
+
 .hud-chip {
   display: grid;
   gap: 1px;
@@ -1598,6 +1626,54 @@ kbd {
   cursor: pointer;
   box-shadow: 0 8px 26px rgba(5, 10, 16, .35);
   backdrop-filter: blur(12px);
+}
+
+.medal-verdict {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 2px 0 4px;
+  font-size: 14px;
+}
+
+.medal-verdict b {
+  font-weight: 900;
+  letter-spacing: .04em;
+  color: #aeb9c2;
+}
+
+.medal-verdict.gold b {
+  color: #ffd45e;
+}
+
+.medal-verdict.silver b {
+  color: #d9e2ea;
+}
+
+.medal-verdict.bronze b {
+  color: #e8a36b;
+}
+
+.medal-verdict span {
+  color: #93a1ad;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.ghost-toggle {
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  color: #93a1ad;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ghost-toggle:hover {
+  color: #e8edf2;
 }
 
 .pause-overlay {

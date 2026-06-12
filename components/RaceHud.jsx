@@ -75,6 +75,12 @@ export default function RaceHud({ race, driver, muted, onToggleMute, onPause }) 
         </div>
       </div>
 
+      {race.delta !== null && race.countdown <= 0 && (
+        <div className={`delta-timer${race.delta < -50 ? " ahead" : race.delta > 50 ? " behind" : ""}`}>
+          {race.delta >= 0 ? "+" : "−"}{(Math.abs(race.delta) / 1000).toFixed(2)}
+        </div>
+      )}
+
       {race.banner && (
         <div className="lap-banner" key={race.banner.id}>{race.banner.text}</div>
       )}

@@ -90,6 +90,7 @@ const CAR_COLORS = [
 export default function Home() {
   const [screen, setScreen] = useState("title");
   const [driver, setDriver] = useState({ name: "", photo: "", color: CAR_COLORS[0].id });
+  const [raceKey, setRaceKey] = useState(0);
   const [challengeId, setChallengeId] = useState("");
   const [challenge, setChallenge] = useState(null);
   const [result, setResult] = useState(null);
@@ -251,7 +252,18 @@ export default function Home() {
     <main className="app-shell">
       <section className="game-stage">
         {screen === "race" ? (
-          <RaceGame driver={driver} challenge={onThisTrack(challenge) ? challenge : null} pbRun={pbRun} onFinish={finishRace} onQuit={() => setScreen("title")} />
+          <RaceGame
+            key={raceKey}
+            driver={driver}
+            challenge={onThisTrack(challenge) ? challenge : null}
+            pbRun={pbRun}
+            onFinish={finishRace}
+            onQuit={() => setScreen("title")}
+            onRestart={() => {
+              logEvent("race_started");
+              setRaceKey((value) => value + 1);
+            }}
+          />
         ) : (
           <IntroBackdrop variant={screen === "title" ? "title" : "panel"} />
         )}
@@ -318,6 +330,7 @@ export default function Home() {
           <Panel>
             <p className="eyebrow">Run complete</p>
             <h2>{formatTime(result.timeMs)}</h2>
+            <MedalVerdict timeMs={result.timeMs} />
             <FinishVerdict result={result} challenge={challenge} pb={pb} />
             <div className="stats-grid">
               <span>Coins <b>{result.coins}</b></span>
@@ -365,6 +378,22 @@ export default function Home() {
         {showChangelog && <ChangelogModal onClose={() => setShowChangelog(false)} />}
       </section>
     </main>
+  );
+}
+
+// Medal targets come from TRACK.medals (calibrated bot runs). Shows what was
+// earned and how far the next one is — instant "one more run" bait.
+function MedalVerdict({ timeMs }) {
+  const medals = TRACK.medals;
+  if (!medals || !timeMs) return null;
+  const earned = timeMs <= medals.gold ? "gold" : timeMs <= medals.silver ? "silver" : timeMs <= medals.bronze ? "bronze" : null;
+  const nextName = earned === "gold" ? null : earned === "silver" ? "gold" : earned === "bronze" ? "silver" : "bronze";
+  const icons = { gold: "🥇 GOLD", silver: "🥈 SILVER", bronze: "🥉 BRONZE" };
+  return (
+    <div className={`medal-verdict${earned ? ` ${earned}` : ""}`}>
+      <b>{earned ? `${icons[earned]} medal` : "No medal yet"}</b>
+      {nextName && <span>{((timeMs - medals[nextName]) / 1000).toFixed(1)}s off {icons[nextName]}</span>}
+    </div>
   );
 }
 

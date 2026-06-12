@@ -49,7 +49,8 @@ export default function GuideModal({ onClose }) {
             <li><b>Coins</b> — lines and arcs trace the fast line, clusters sit off it; they return every lap. Collect 15 for an extra boost.</li>
             <li><b>Rails</b> — glancing hits scrape speed off; head-on hits stop you. Steer away from the rail (or reverse out) to recover.</li>
             <li><b>Reverse</b> — stop, then keep holding brake. The car backs and steers like a real car.</li>
-            <li><b>Ghosts</b> — a gold ghost races your personal best on every run; on a challenge link, blue and purple ghosts replay your rivals&apos; best runs.</li>
+            <li><b>Ghosts</b> — a gold ghost races your personal best on every run; on a challenge link, blue and purple ghosts replay your rivals&apos; best runs. Name tags show who&apos;s who (toggle in pause), and the gap timer shows live how far ahead or behind you are.</li>
+            <li><b>Medals</b> — bronze, silver, and gold target times on every run. Press <kbd>R</kbd> anytime for an instant restart.</li>
             <li><b>Road messages</b> — after a run you can leave a note; it pops up for the next drivers mid-race.</li>
           </ul>
         </section>

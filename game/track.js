@@ -4,6 +4,9 @@ export const TRACK = {
   id: "akina-ridge",
   name: "Akina Ridge Sprint",
   laps: 3,
+  // Medal targets calibrated from headless bot runs at three skill levels
+  // (scripts/record-rivals.mjs personalities on this layout: 184.7/134.5/129.4s)
+  medals: { bronze: 185000, silver: 135000, gold: 129500 },
   width: 10,
   railOffset: 5.8,
   startDistance: 60,

@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Sky } from "@react-three/drei";
+import { Billboard, Sky, Text } from "@react-three/drei";
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import RaceHud from "./RaceHud";
@@ -36,6 +36,7 @@ const INITIAL_RACE = {
   reversing: false,
   progress: 0,
   countdown: 3,
+  delta: null,
   banner: null,
   roadMessage: null,
   wrongWay: false,
@@ -43,18 +44,19 @@ const INITIAL_RACE = {
   debug: null,
 };
 
-export default function RaceGame({ driver, challenge, pbRun, onFinish, onQuit }) {
+export default function RaceGame({ driver, challenge, pbRun, onFinish, onQuit, onRestart }) {
   const inputRef = useRef({ left: false, right: false, gas: false, brake: false, handbrake: false, boost: false });
   const [race, setRace] = useState(INITIAL_RACE);
   const [showDebug, setShowDebug] = useState(false);
   const [paused, setPaused] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [muted, setMuted] = useState(() => typeof window !== "undefined" && localStorage.getItem("chopfirst.muted") === "1");
+  const [ghostLabels, setGhostLabels] = useState(() => typeof window === "undefined" || localStorage.getItem("chopfirst.ghostLabels") !== "0");
   const pausedRef = useRef(false);
   pausedRef.current = paused;
   const audio = useMemo(() => createGameAudio(), []);
 
-  useKeyboard(inputRef, setShowDebug, setPaused);
+  useKeyboard(inputRef, setShowDebug, setPaused, onRestart);
 
   useEffect(() => {
     // Touch players get automatic throttle (mirrors the media query that shows
@@ -67,6 +69,10 @@ export default function RaceGame({ driver, challenge, pbRun, onFinish, onQuit })
     audio.setMuted(muted);
     if (typeof window !== "undefined") localStorage.setItem("chopfirst.muted", muted ? "1" : "0");
   }, [audio, muted]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") localStorage.setItem("chopfirst.ghostLabels", ghostLabels ? "1" : "0");
+  }, [ghostLabels]);
 
   useEffect(() => {
     // browsers only allow audio after a user gesture
@@ -89,19 +95,26 @@ export default function RaceGame({ driver, challenge, pbRun, onFinish, onQuit })
         <ambientLight intensity={0.35} />
         <directionalLight position={[40, 70, 25]} intensity={1.6} color="#fff4e0" />
         <Sky sunPosition={[100, 40, 40]} turbidity={8} rayleigh={0.8} />
-        <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} onFinish={onFinish} setRace={setRace} showDebug={showDebug} pausedRef={pausedRef} audio={audio} />
+        <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} onFinish={onFinish} setRace={setRace} showDebug={showDebug} pausedRef={pausedRef} audio={audio} ghostLabels={ghostLabels} />
       </Canvas>
       <RaceHud race={race} driver={driver} muted={muted} onToggleMute={() => setMuted((value) => !value)} onPause={() => setPaused(true)} />
       <TouchControls controlsRef={inputRef} boosts={race.boosts} />
       {paused && !showGuide && (
-        <PauseOverlay onResume={() => setPaused(false)} onGuide={() => setShowGuide(true)} onQuit={onQuit} />
+        <PauseOverlay
+          onResume={() => setPaused(false)}
+          onGuide={() => setShowGuide(true)}
+          onQuit={onQuit}
+          onRestart={onRestart}
+          ghostLabels={ghostLabels}
+          onToggleLabels={() => setGhostLabels((value) => !value)}
+        />
       )}
       {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
     </>
   );
 }
 
-function PauseOverlay({ onResume, onGuide, onQuit }) {
+function PauseOverlay({ onResume, onGuide, onQuit, onRestart, ghostLabels, onToggleLabels }) {
   const touch = typeof window !== "undefined" && !window.matchMedia("(hover: hover) and (pointer: fine)").matches;
   return (
     <div className="pause-overlay">
@@ -116,20 +129,24 @@ function PauseOverlay({ onResume, onGuide, onQuit }) {
         ) : (
           <ul className="pause-hints">
             <li><kbd>W</kbd>/<kbd>↑</kbd> gas · <kbd>S</kbd>/<kbd>↓</kbd> brake &amp; reverse</li>
-            <li><kbd>Shift</kbd> drift · <kbd>Space</kbd> boost · <kbd>Esc</kbd> pause</li>
+            <li><kbd>Shift</kbd> drift · <kbd>Space</kbd> boost · <kbd>Esc</kbd> pause · <kbd>R</kbd> restart</li>
           </ul>
         )}
         <button className="primary" onClick={onResume}>Resume</button>
         <div className="pause-row">
+          <button className="secondary" onClick={onRestart}>Restart run</button>
           <button className="secondary" onClick={onGuide}>How to play</button>
           <button className="secondary" onClick={onQuit}>Quit run</button>
         </div>
+        <button className="ghost-toggle" onClick={onToggleLabels}>
+          {ghostLabels ? "✓ Ghost name tags on" : "Ghost name tags off"}
+        </button>
       </div>
     </div>
   );
 }
 
-function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, showDebug, pausedRef, audio }) {
+function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, showDebug, pausedRef, audio, ghostLabels }) {
   const car = useMemo(() => createVehicleState(), []);
   const carRef = useRef(null);
   const roadMessages = useMemo(
@@ -145,16 +162,21 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
   const finishedRef = useRef(false);
   const snapshotClock = useRef(0);
   const countdownRef = useRef(3);
-  const { camera } = useThree();
+  const deltaRef = useRef({ idx: 0, maxD: -Infinity, value: null });
+  const { camera, scene } = useThree();
   const trackLength = getTrackLength();
 
-  // Debug hook for manual/scripted driving QA.
+  // Debug hooks for manual/scripted driving QA.
   useEffect(() => {
     window.__carState = car;
+    window.__scene = scene;
+    window.__camera = camera;
     return () => {
       if (window.__carState === car) delete window.__carState;
+      if (window.__scene === scene) delete window.__scene;
+      if (window.__camera === camera) delete window.__camera;
     };
-  }, [car]);
+  }, [car, scene, camera]);
 
   useFrame((_, delta) => {
     if (finishedRef.current || pausedRef.current) return;
@@ -214,6 +236,7 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
         boostCooldown: car.boostCooldown,
         drifting: car.drifting,
         reversing: car.reversing,
+        delta: pbRun?.ghost?.length > 1 ? pbDelta(pbRun.ghost, car, trackLength, deltaRef.current) : null,
         progress: Math.min(1, raceProgress(car, trackLength) / (TRACK.laps * trackLength)),
         countdown: countdownRef.current,
         banner: flow.banner && car.timeMs < flow.banner.until ? flow.banner : null,
@@ -254,7 +277,7 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
       <TrackWorld />
       <StartGantry countdownRef={countdownRef} />
       <Pickups collected={car.coins} lap={Math.min(TRACK.laps - 1, car.lap)} />
-      <Ghosts challenge={challenge} pbRun={pbRun} car={car} />
+      <Ghosts challenge={challenge} pbRun={pbRun} car={car} showLabels={ghostLabels} />
       <RaceCar ref={carRef} carState={car} color={driver?.color} />
       <Particles ref={smokeRef} mode="smoke" count={70} />
       <Particles ref={sparksRef} mode="spark" count={60} />
@@ -353,6 +376,25 @@ function progressFromStart(distance, trackLength) {
 function raceProgress(car, trackLength) {
   if (!car.startGatePassed) return 0;
   return car.lap * trackLength + progressFromStart(car.distance, trackLength);
+}
+
+// Live gap to the PB ghost: PB's time at the player's current track distance
+// vs the player's clock. Trace d (lap*L + distance) dips between the spline
+// wrap and the start gate each lap, so the reading holds steady through the
+// dip (a monotonic cursor on both sides) instead of spiking.
+function pbDelta(pbGhost, car, trackLength, state) {
+  const d = car.lap * trackLength + car.distance;
+  if (d <= state.maxD) return state.value;
+  state.maxD = d;
+  let i = state.idx;
+  while (i + 1 < pbGhost.length && pbGhost[i + 1].d <= d) i += 1;
+  state.idx = i;
+  if (i + 1 >= pbGhost.length || d < pbGhost[i].d) return state.value;
+  const a = pbGhost[i];
+  const b = pbGhost[i + 1];
+  const pbTime = a.t + ((d - a.d) / (b.d - a.d || 1)) * (b.t - a.t);
+  state.value = car.timeMs - pbTime;
+  return state.value;
 }
 
 /* ---------------------------------- world ---------------------------------- */
@@ -1197,46 +1239,63 @@ function Coin({ position }) {
   );
 }
 
-function Ghosts({ challenge, pbRun, car }) {
-  const runs = challenge?.runs?.slice(0, 2) || [];
+function Ghosts({ challenge, pbRun, car, showLabels }) {
+  // runs without a usable trace (legacy/pre-validator data) can't be replayed
+  const runs = (challenge?.runs || []).filter((run) => run.ghost?.length > 1).slice(0, 2);
   return (
     <>
-      {pbRun?.ghost?.length > 0 && <GhostCar run={pbRun} color="#ffd15c" car={car} />}
+      {pbRun?.ghost?.length > 0 && <GhostCar run={pbRun} label="YOUR BEST" color="#ffd15c" car={car} showLabel={showLabels} />}
       {runs.map((run, index) => (
-        <GhostCar key={run.id || index} run={run} color={index ? "#c178ff" : "#61d4ff"} car={car} />
+        <GhostCar key={run.id || index} run={run} label={run.name} color={index ? "#c178ff" : "#61d4ff"} car={car} showLabel={showLabels} />
       ))}
     </>
   );
 }
 
-function GhostCar({ run, color, car }) {
-  const ref = useRef(null);
-  useFrame(() => {
-    const ghost = run.ghost || [];
-    if (!ref.current || !ghost.length) return;
-    // synced to race time so it's a true side-by-side race: ghosts launch at
-    // GO and park at the finish line once their run is over (no looping)
-    const t = Math.min(car.timeMs, run.timeMs || Infinity);
-    const sample = ghost.reduce((best, item) => (Math.abs((item.t || 0) - t) < Math.abs((best?.t || 0) - t) ? item : best), ghost[0]);
-    const distance = sample.d ?? sample.x ?? 0;
-    const transform = getGhostTransform(distance, sample.l ?? sample.y ?? 0, sample.h ?? sample.a ?? 0);
-    ref.current.position.copy(transform.position);
-    ref.current.rotation.set(0, transform.yaw, 0);
-  });
-  return (
-    <group ref={ref}>
-      <GhostShell color={color} />
-    </group>
-  );
+// Interpolated trace lookup — decimated samples are ~0.3–0.5s apart, so the
+// old nearest-sample replay visibly stepped. Handles legacy {x,y,a} fields.
+function sampleGhost(ghost, t) {
+  const val = (s) => ({ d: s.d ?? s.x ?? 0, l: s.l ?? s.y ?? 0, h: s.h ?? s.a ?? 0 });
+  if (t <= (ghost[0].t || 0)) return val(ghost[0]);
+  const last = ghost[ghost.length - 1];
+  if (t >= (last.t || 0)) return val(last);
+  let lo = 0;
+  let hi = ghost.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if ((ghost[mid].t || 0) <= t) lo = mid;
+    else hi = mid;
+  }
+  const a = val(ghost[lo]);
+  const b = val(ghost[hi]);
+  const k = (t - ghost[lo].t) / (ghost[hi].t - ghost[lo].t || 1);
+  return { d: a.d + (b.d - a.d) * k, l: a.l + (b.l - a.l) * k, h: a.h + (b.h - a.h) * k };
 }
 
-function GhostShell({ color }) {
-  const material = useMemo(
+function traceSpeed(ghost, t) {
+  const windowMs = 250;
+  const before = sampleGhost(ghost, Math.max(0, t - windowMs));
+  const now = sampleGhost(ghost, t);
+  return (now.d - before.d) / (windowMs / 1000);
+}
+
+function formatGhostTime(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return "";
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000).toString().padStart(2, "0");
+  const centis = Math.floor((ms % 1000) / 10).toString().padStart(2, "0");
+  return `${minutes}:${seconds}.${centis}`;
+}
+
+function GhostCar({ run, label, color, car, showLabel }) {
+  const ref = useRef(null);
+  const labelRef = useRef(null);
+  const bodyMat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
         color,
         transparent: true,
-        opacity: 0.55,
+        opacity: 0.5,
         emissive: color,
         emissiveIntensity: 0.45,
         roughness: 0.35,
@@ -1245,6 +1304,51 @@ function GhostShell({ color }) {
       }),
     [color],
   );
+  const tailMat = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: "#34110d", transparent: true, opacity: 0.8, emissive: "#ff2a1f", emissiveIntensity: 0.4, depthWrite: false }),
+    [],
+  );
+
+  useFrame(() => {
+    const ghost = run.ghost || [];
+    if (!ref.current || ghost.length < 2) return;
+    // synced to race time so it's a true side-by-side race: ghosts launch at
+    // GO and park at the finish line once their run is over (no looping)
+    const t = Math.min(car.timeMs, run.timeMs || Infinity);
+    const sample = sampleGhost(ghost, t);
+    const transform = getGhostTransform(sample.d, sample.l, sample.h);
+    ref.current.position.copy(transform.position);
+    ref.current.rotation.set(0, transform.yaw, 0);
+
+    // transient, not obstructive: fade away as the player closes in
+    const dist = transform.position.distanceTo(car.position);
+    const fade = THREE.MathUtils.clamp((dist - 5) / 14, 0, 1);
+    bodyMat.opacity = 0.13 + fade * 0.37;
+    tailMat.opacity = 0.18 + fade * 0.62;
+
+    // brake light inferred from the trace slowing down
+    tailMat.emissiveIntensity = traceSpeed(ghost, t) < traceSpeed(ghost, t - 350) - 1.2 ? 3.2 : 0.4;
+
+    if (labelRef.current) {
+      labelRef.current.visible = dist > 7 && dist < 130;
+    }
+  });
+
+  return (
+    <group ref={ref}>
+      <GhostShell material={bodyMat} tailMaterial={tailMat} />
+      {showLabel && label && (
+        <Billboard ref={labelRef} position={[0, 2.3, 0]}>
+          <Text fontSize={0.62} color={color} outlineWidth={0.05} outlineColor="#0b1118" anchorX="center" anchorY="bottom">
+            {`${label} · ${formatGhostTime(run.timeMs)}`}
+          </Text>
+        </Billboard>
+      )}
+    </group>
+  );
+}
+
+function GhostShell({ material, tailMaterial }) {
   return (
     <group>
       <mesh material={material} position={[0, 0.55, -0.15]}>
@@ -1258,6 +1362,9 @@ function GhostShell({ color }) {
       </mesh>
       <mesh material={material} position={[0, 1.15, -2.0]}>
         <boxGeometry args={[1.9, 0.07, 0.45]} />
+      </mesh>
+      <mesh material={tailMaterial} position={[0, 0.62, -1.87]}>
+        <boxGeometry args={[1.6, 0.13, 0.06]} />
       </mesh>
       {[-0.88, 0.88].map((x) =>
         [-1.32, 1.32].map((z) => (
@@ -1432,10 +1539,11 @@ function TouchControls({ controlsRef, boosts }) {
   );
 }
 
-function useKeyboard(inputRef, setShowDebug, setPaused) {
+function useKeyboard(inputRef, setShowDebug, setPaused, onRestart) {
   useEffect(() => {
     inputRef.current.toggleDebug = () => setShowDebug((value) => !value);
     inputRef.current.togglePause = () => setPaused((value) => !value);
+    inputRef.current.restart = onRestart;
     const down = (event) => setKey(inputRef.current, event, true);
     const up = (event) => setKey(inputRef.current, event, false);
     window.addEventListener("keydown", down);
@@ -1445,8 +1553,9 @@ function useKeyboard(inputRef, setShowDebug, setPaused) {
       window.removeEventListener("keyup", up);
       delete inputRef.current.toggleDebug;
       delete inputRef.current.togglePause;
+      delete inputRef.current.restart;
     };
-  }, [inputRef, setShowDebug, setPaused]);
+  }, [inputRef, setShowDebug, setPaused, onRestart]);
 }
 
 function setKey(input, event, value) {
@@ -1457,6 +1566,9 @@ function setKey(input, event, value) {
   }
   if (value && (key === "escape" || key === "p")) {
     input.togglePause?.();
+  }
+  if (value && key === "r") {
+    input.restart?.();
   }
   if (key === "arrowleft" || key === "a") input.left = value;
   if (key === "arrowright" || key === "d") input.right = value;
