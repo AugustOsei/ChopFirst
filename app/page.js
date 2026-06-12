@@ -8,7 +8,6 @@ import ChangelogModal from "../components/ChangelogModal";
 import { CURRENT_VERSION } from "../lib/changelog";
 import { logEvent } from "../lib/log-event";
 import { TRACK } from "../game/track";
-import { RIVAL_RUNS } from "../game/rivals";
 
 function formatTime(ms) {
   const total = Math.max(0, ms || 0);
@@ -91,7 +90,6 @@ const CAR_COLORS = [
 export default function Home() {
   const [screen, setScreen] = useState("title");
   const [driver, setDriver] = useState({ name: "", photo: "", color: CAR_COLORS[0].id });
-  const [rivalsOn, setRivalsOnState] = useState(true);
   const [challengeId, setChallengeId] = useState("");
   const [challenge, setChallenge] = useState(null);
   const [result, setResult] = useState(null);
@@ -139,13 +137,7 @@ export default function Home() {
       // no PB ghost yet
     }
     setChangelogSeen(localStorage.getItem("chopfirst.seenVersion") === CURRENT_VERSION);
-    setRivalsOnState(localStorage.getItem("chopfirst.rivals") !== "0");
   }, []);
-
-  function setRivalsOn(value) {
-    setRivalsOnState(value);
-    localStorage.setItem("chopfirst.rivals", value ? "1" : "0");
-  }
 
   function openChangelog() {
     localStorage.setItem("chopfirst.seenVersion", CURRENT_VERSION);
@@ -259,14 +251,7 @@ export default function Home() {
     <main className="app-shell">
       <section className="game-stage">
         {screen === "race" ? (
-          <RaceGame
-            driver={driver}
-            challenge={onThisTrack(challenge) ? challenge : null}
-            pbRun={pbRun}
-            rivals={rivalsOn && !(challenge && onThisTrack(challenge)) ? RIVAL_RUNS : null}
-            onFinish={finishRace}
-            onQuit={() => setScreen("title")}
-          />
+          <RaceGame driver={driver} challenge={onThisTrack(challenge) ? challenge : null} pbRun={pbRun} onFinish={finishRace} onQuit={() => setScreen("title")} />
         ) : (
           <IntroBackdrop variant={screen === "title" ? "title" : "panel"} />
         )}
@@ -324,19 +309,6 @@ export default function Home() {
                 ))}
               </div>
             </div>
-            {!(challenge && onThisTrack(challenge)) && (
-              <div className="field swatch-field">
-                Opponents
-                <div className="mode-row">
-                  <button type="button" className={`mode-chip${rivalsOn ? " selected" : ""}`} onClick={() => setRivalsOn(true)}>
-                    3 rivals
-                  </button>
-                  <button type="button" className={`mode-chip${!rivalsOn ? " selected" : ""}`} onClick={() => setRivalsOn(false)}>
-                    Solo run
-                  </button>
-                </div>
-              </div>
-            )}
             <button className="primary" onClick={startRace}>Start 3 laps</button>
             <button className="ghost-button back-button" onClick={() => setScreen("title")}>‹ Back</button>
           </Panel>
@@ -346,21 +318,6 @@ export default function Home() {
           <Panel>
             <p className="eyebrow">Run complete</p>
             <h2>{formatTime(result.timeMs)}</h2>
-            {result.placement && (
-              <p className={`race-placement${result.placement === 1 ? " win" : ""}`}>
-                {result.placement === 1 ? "🏁 P1 — you chopped the whole pack" : `Finished P${result.placement} of ${result.rivalResults.length + 1}`}
-              </p>
-            )}
-            {result.rivalResults?.length > 0 && (
-              <div className="rival-results">
-                {result.rivalResults.map((rival) => (
-                  <span key={rival.name}>
-                    <i style={{ background: rival.color }} />
-                    {rival.name} <b>{rival.timeMs ? formatTime(rival.timeMs) : "still climbing"}</b>
-                  </span>
-                ))}
-              </div>
-            )}
             <FinishVerdict result={result} challenge={challenge} pb={pb} />
             <div className="stats-grid">
               <span>Coins <b>{result.coins}</b></span>

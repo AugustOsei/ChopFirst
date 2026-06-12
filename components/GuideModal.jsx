@@ -44,7 +44,6 @@ export default function GuideModal({ onClose }) {
         <section className="guide-section">
           <h3>On the mountain</h3>
           <ul className="guide-tips">
-            <li><b>Rivals</b> — three computer drivers share the mountain: Tofu Taxi, Drift Cat, and Kaido King, slow to fast. Beat the pack for P1, or switch to a solo run in driver setup.</li>
             <li><b>Boost</b> — start with 3 charges; every 15 coins banks another (max 5 stocked). Best on straights; the pips show charges and cooldown.</li>
             <li><b>Drift</b> — hold the handbrake into a corner to slide and build drift score. Counter-steer to recover.</li>
             <li><b>Coins</b> — lines and arcs trace the fast line, clusters sit off it; they return every lap. Collect 15 for an extra boost.</li>

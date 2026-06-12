@@ -57,12 +57,6 @@ export default function RaceHud({ race, driver, muted, onToggleMute, onPause }) 
       </div>
 
       <div className="hud-top">
-        {race.position && (
-          <div className="hud-chip pos-chip">
-            <small>POS</small>
-            <b>P{race.position}<i>/{race.racers}</i></b>
-          </div>
-        )}
         <div className="hud-chip lap-chip">
           <small>LAP</small>
           <b>{Math.min(3, race.lap + 1)}<i>/3</i></b>
