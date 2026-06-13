@@ -461,6 +461,7 @@ function TrackWorld() {
   const leftRail = useMemo(() => createRailGeometry(-1), []);
   const rightRail = useMemo(() => createRailGeometry(1), []);
   const curveMarkers = useMemo(() => createCurveMarkers(), []);
+  const brakeBoards = useMemo(() => createBrakeBoards(), []);
   const mountains = useMemo(() => createMountains(), []);
 
   return (
@@ -509,6 +510,9 @@ function TrackWorld() {
       {curveMarkers.map((marker) => (
         <CurveMarker key={marker.key} position={marker.position} yaw={marker.yaw} direction={marker.direction} />
       ))}
+      {brakeBoards.map((board) => (
+        <BrakeBoard key={board.key} position={board.position} yaw={board.yaw} count={board.count} />
+      ))}
       {mountains.map((mountain) => (
         <mesh key={mountain.key} position={mountain.position} scale={[mountain.scale * 1.5, mountain.scale, mountain.scale * 1.5]}>
           <coneGeometry args={[1, 1.6, 6]} />
@@ -546,13 +550,17 @@ function Clouds() {
   ));
 }
 
-function Instances({ matrices, geometry, material, castShadow = false }) {
+function Instances({ matrices, geometry, material, colors, castShadow = false }) {
   const ref = useRef(null);
   useLayoutEffect(() => {
     if (!ref.current) return;
     matrices.forEach((matrix, index) => ref.current.setMatrixAt(index, matrix));
     ref.current.instanceMatrix.needsUpdate = true;
-  }, [matrices]);
+    if (colors) {
+      colors.forEach((color, index) => ref.current.setColorAt(index, color));
+      if (ref.current.instanceColor) ref.current.instanceColor.needsUpdate = true;
+    }
+  }, [matrices, colors]);
   return <instancedMesh ref={ref} args={[geometry, material, matrices.length]} frustumCulled={false} castShadow={castShadow} />;
 }
 
@@ -616,11 +624,15 @@ function Delineators() {
   );
 }
 
+const FOREST_GREENS = ["#21663c", "#2b7a48", "#185a33", "#357d4a", "#14502d"];
+const FOREST_AUTUMN = ["#b5772a", "#c79438"];
+
 function Forest() {
   const data = useMemo(() => {
     const dummy = new THREE.Object3D();
     const trunks = [];
     const canopies = [];
+    const canopyColors = [];
     const length = getTrackLength();
     for (let i = 0; i < 170; i += 1) {
       const distance = (i / 170) * length;
@@ -630,22 +642,31 @@ function Forest() {
       const pos = frame.position.clone().addScaledVector(frame.normal, offset);
       if (!isPointClearOfRoad(pos, TRACK.railOffset + 3)) continue;
       const scale = 0.85 + ((i * 13) % 9) * 0.13;
-      trunks.push(composeMatrix(dummy, pos.x, pos.y + 0.75 * scale, pos.z, scale));
-      canopies.push(composeMatrix(dummy, pos.x, pos.y + 2.3 * scale, pos.z, scale, (i * 0.7) % Math.PI));
+      // every fifth tree is a tall, slim pine; the rest keep the rounder shape
+      const slim = i % 5 === 0;
+      const vy = scale * (slim ? 1.75 : 1);
+      const rad = slim ? scale * 0.7 : scale;
+      trunks.push(composeMatrix(dummy, pos.x, pos.y + 0.75 * vy, pos.z, rad, 0, vy));
+      canopies.push(composeMatrix(dummy, pos.x, pos.y + 2.3 * vy, pos.z, rad, (i * 0.7) % Math.PI, vy));
+      // mostly greens with the occasional autumn tree for warmth
+      const autumn = (i * 29) % 17 === 0;
+      canopyColors.push(new THREE.Color(autumn ? FOREST_AUTUMN[i % 2] : FOREST_GREENS[(i * 7) % FOREST_GREENS.length]));
     }
     return {
       trunks,
       canopies,
+      canopyColors,
       trunkGeometry: new THREE.CylinderGeometry(0.16, 0.24, 1.6, 6),
       canopyGeometry: new THREE.ConeGeometry(1.15, 2.6, 7),
       trunkMaterial: new THREE.MeshStandardMaterial({ color: "#5b3d25", roughness: 1 }),
-      canopyMaterial: new THREE.MeshStandardMaterial({ color: "#21663c", roughness: 0.9 }),
+      // white base so per-instance colors show true
+      canopyMaterial: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.9 }),
     };
   }, []);
   return (
     <>
       <Instances matrices={data.trunks} geometry={data.trunkGeometry} material={data.trunkMaterial} castShadow />
-      <Instances matrices={data.canopies} geometry={data.canopyGeometry} material={data.canopyMaterial} castShadow />
+      <Instances matrices={data.canopies} colors={data.canopyColors} geometry={data.canopyGeometry} material={data.canopyMaterial} castShadow />
     </>
   );
 }
@@ -931,6 +952,66 @@ function CurveMarker({ position, yaw, direction }) {
   );
 }
 
+function BrakeBoard({ position, yaw, count }) {
+  return (
+    <group position={position} rotation={[0, yaw, 0]}>
+      <mesh castShadow position={[0, 0.62, 0]}>
+        <boxGeometry args={[0.1, 1.24, 0.1]} />
+        <meshStandardMaterial color="#2b3338" roughness={0.5} />
+      </mesh>
+      <mesh castShadow position={[0, 1.42, 0]}>
+        <boxGeometry args={[1.02, 1.0, 0.08]} />
+        <meshStandardMaterial color="#f4f6f2" roughness={0.5} />
+      </mesh>
+      {/* descending diagonal stripes — 3 boards out, 1 at the brake point */}
+      {Array.from({ length: count }).map((_, i) => (
+        <mesh key={i} position={[(-(count - 1) / 2 + i) * 0.27, 1.42, 0.05]} rotation={[0, 0, 0.34]}>
+          <boxGeometry args={[0.13, 0.94, 0.02]} />
+          <meshBasicMaterial color="#15181c" />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// Countdown braking boards on the outside approach to the sharpest corners:
+// three boards (3/2/1 stripes) at descending distances. Decorative, and they
+// teach the brake point so players get faster — which keeps them playing.
+function createBrakeBoards() {
+  const length = getTrackLength();
+  const apexes = [];
+  let last = -999;
+  for (let d = 0; d < length; d += 6) {
+    const frame = getTrackFrame(d);
+    if (Math.abs(frame.curvature) < 1.5 || d - last < 95) continue;
+    apexes.push({ d, side: Math.sign(frame.curvature) || 1 });
+    last = d;
+  }
+  const stops = [
+    { count: 3, before: 52 },
+    { count: 2, before: 35 },
+    { count: 1, before: 18 },
+  ];
+  const boards = [];
+  for (const apex of apexes) {
+    const outSide = -apex.side; // boards sit on the outside of the upcoming turn
+    for (const stop of stops) {
+      const d = (apex.d - stop.before + length) % length;
+      const frame = getTrackFrame(d);
+      const pos = frame.position.clone().addScaledVector(frame.normal, outSide * (TRACK.railOffset + 1.5));
+      if (!isPointClearOfRoad(pos, TRACK.railOffset + 0.7)) continue;
+      pos.y += 0.2;
+      boards.push({
+        key: `brake-${Math.round(apex.d)}-${stop.count}`,
+        position: [pos.x, pos.y, pos.z],
+        yaw: Math.atan2(frame.tangent.x, frame.tangent.z) + (outSide > 0 ? Math.PI / 2 : -Math.PI / 2),
+        count: stop.count,
+      });
+    }
+  }
+  return boards;
+}
+
 function createCurveMarkers() {
   const length = getTrackLength();
   const items = [];
@@ -1135,6 +1216,19 @@ const RaceCar = forwardRef(function RaceCar({ carState, color, headlights }, ref
           <boxGeometry args={[1.62, 0.13, 0.06]} />
           <meshStandardMaterial ref={tailMatRef} color="#3d090d" emissive="#ff1626" emissiveIntensity={0.85} />
         </mesh>
+        {/* side mirrors on the A-pillars */}
+        {[-1, 1].map((s) => (
+          <group key={`mirror-${s}`} position={[s * 0.96, 0.92, 0.7]}>
+            <mesh castShadow position={[s * 0.08, 0, 0]} rotation={[0, 0, s * -0.2]}>
+              <boxGeometry args={[0.2, 0.11, 0.13]} />
+              <meshStandardMaterial color={paint} roughness={0.3} metalness={0.4} />
+            </mesh>
+            <mesh position={[s * 0.17, 0, 0.02]} rotation={[0, s * 0.5, 0]}>
+              <boxGeometry args={[0.02, 0.08, 0.1]} />
+              <meshStandardMaterial color="#9fc2d8" roughness={0.1} metalness={0.7} />
+            </mesh>
+          </group>
+        ))}
         {/* exhausts */}
         {[-0.36, 0.36].map((x) => (
           <mesh key={x} position={[x, 0.4, -2.16]} rotation={[Math.PI / 2, 0, 0]}>
