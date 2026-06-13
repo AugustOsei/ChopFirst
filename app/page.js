@@ -260,8 +260,21 @@ export default function Home() {
   );
 
   return (
-    <main className="app-shell">
-      <section className="game-stage">
+    <>
+      {screen === "title" ? (
+        <LandingPage
+          challenge={challenge}
+          onStart={() => setScreen("setup")}
+          onGuide={() => setShowGuide(true)}
+          onBoard={() => setShowBoard(true)}
+          onFeedback={() => setShowFeedback(true)}
+          onChangelog={openChangelog}
+          changelogSeen={changelogSeen}
+          overlayOpen={showGuide || showBoard || showFeedback || showChangelog}
+        />
+      ) : (
+      <main className="app-shell">
+        <section className="game-stage">
         {screen === "race" ? (
           <RaceGame
             key={raceKey}
@@ -277,26 +290,16 @@ export default function Home() {
             }}
           />
         ) : (
-          <IntroBackdrop variant={screen === "title" ? "title" : "panel"} />
-        )}
-
-        {screen === "title" && (
-          <TitleScreen
-            challenge={challenge}
-            onStart={() => setScreen("setup")}
-            onGuide={() => setShowGuide(true)}
-            onBoard={() => setShowBoard(true)}
-            onFeedback={() => setShowFeedback(true)}
-            onChangelog={openChangelog}
-            changelogSeen={changelogSeen}
-            overlayOpen={showGuide || showBoard || showFeedback || showChangelog}
-          />
+          <IntroBackdrop variant="panel" />
         )}
 
         {screen === "setup" && (
           <Panel>
             <p className="eyebrow">Driver setup</p>
             <h2 className="setup-title">Ready to run?</h2>
+            <p className="setup-lede">
+              {challenge ? `Chop ${challenge.runs?.[0]?.name || "the leader"}'s time. Make it yours.` : "Pick your colors and your sky, then set a time worth sending."}
+            </p>
             {challenge?.messages?.length > 0 && (
               <div className="road-notes">
                 <small>Notes left on the road</small>
@@ -400,12 +403,15 @@ export default function Home() {
           </Panel>
         )}
 
-        {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
-        {showBoard && <GlobalBoard onClose={() => setShowBoard(false)} />}
-        {showFeedback && <FeedbackModal driverName={driver.name} onClose={() => setShowFeedback(false)} />}
-        {showChangelog && <ChangelogModal onClose={() => setShowChangelog(false)} />}
-      </section>
-    </main>
+        </section>
+      </main>
+      )}
+
+      {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
+      {showBoard && <GlobalBoard onClose={() => setShowBoard(false)} />}
+      {showFeedback && <FeedbackModal driverName={driver.name} onClose={() => setShowFeedback(false)} />}
+      {showChangelog && <ChangelogModal onClose={() => setShowChangelog(false)} />}
+    </>
   );
 }
 
@@ -582,7 +588,44 @@ function FinishVerdict({ result, challenge, pb }) {
   );
 }
 
-function TitleScreen({ challenge, onStart, onGuide, onBoard, onFeedback, onChangelog, changelogSeen, overlayOpen }) {
+// Reveals children with a fade-up the first time they scroll into view.
+function useReveal() {
+  const ref = useRef(null);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || shown) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setShown(true);
+          io.disconnect();
+        }
+      },
+      { threshold: 0.18, root: el.closest(".landing") },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [shown]);
+  return [ref, shown];
+}
+
+function FeatureRow({ flip, eyebrow, title, body, media, foot }) {
+  const [ref, shown] = useReveal();
+  return (
+    <div ref={ref} className={`feature-row${flip ? " flip" : ""}${shown ? " in" : ""}`}>
+      <div className="feature-copy">
+        <p className="feature-eyebrow">{eyebrow}</p>
+        <h3 className="feature-title">{title}</h3>
+        <p className="feature-body">{body}</p>
+        {foot}
+      </div>
+      <div className="feature-media">{media}</div>
+    </div>
+  );
+}
+
+function LandingPage({ challenge, onStart, onGuide, onBoard, onFeedback, onChangelog, changelogSeen, overlayOpen }) {
   const [bestTime, setBestTime] = useState(null);
   useEffect(() => {
     try {
@@ -595,47 +638,143 @@ function TitleScreen({ challenge, onStart, onGuide, onBoard, onFeedback, onChang
   useEffect(() => {
     const onKey = (event) => {
       if (overlayOpen) return;
-      if (event.key === "Enter" || event.key === " ") onStart();
+      if (event.key === "Enter") onStart();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onStart, overlayOpen]);
 
   return (
-    <div className="title-screen">
-      <div className="title-center">
-        <p className="eyebrow title-fade" style={{ animationDelay: ".55s" }}>24-hour touge time attack</p>
-        <div className="brand-logo title-logo" aria-label="CHOP FIRST">
-          <span className="brand-chop logo-pop">CHOP</span>
-          <span className="brand-first logo-pop" style={{ animationDelay: ".14s" }}>FIRST</span>
+    <div className="landing">
+      <header className="landing-nav">
+        <span className="nav-mark">CHOP<i>FIRST</i></span>
+        <div className="nav-links">
+          <button onClick={onBoard}>Leaderboard</button>
+          <button onClick={onGuide}>How to play</button>
+          <button className="nav-cta" onClick={onStart}>Play</button>
         </div>
-        <div className="brand-strip title-strip" aria-hidden />
-        <p className="title-tagline title-fade" style={{ animationDelay: ".7s" }}>
-          Set a time. Send the link. They get 24 hours to chop it.
-        </p>
-        {challenge ? (
-          <p className="challenge-pill title-pill title-fade" style={{ animationDelay: ".85s" }}>
-            Beat {formatTime(challenge.runs[0]?.timeMs)} by {challenge.runs[0]?.name || "a rival"}
-            <ChallengeCountdown expiresAt={challenge.expiresAt} />
+      </header>
+
+      {/* hero */}
+      <section className="hero">
+        <img src="/cover.jpg" alt="" className="hero-art" />
+        <div className="hero-scrim" />
+        <div className="hero-inner">
+          <p className="eyebrow title-fade" style={{ animationDelay: ".15s" }}>24-hour touge time attack</p>
+          <div className="brand-logo hero-logo" aria-label="CHOP FIRST">
+            <span className="brand-chop logo-pop">CHOP</span>
+            <span className="brand-first logo-pop" style={{ animationDelay: ".12s" }}>FIRST</span>
+          </div>
+          <div className="brand-strip hero-strip" aria-hidden />
+          <p className="hero-tagline title-fade" style={{ animationDelay: ".5s" }}>
+            Set a blistering time on the mountain. Send the link. Your friends get 24 hours to chop it — or admit you were faster.
           </p>
-        ) : (
-          bestTime != null && (
-            <p className="challenge-pill title-pill title-fade" style={{ animationDelay: ".85s" }}>
-              Your best — {formatTime(bestTime)}. Chop it.
+          {challenge ? (
+            <p className="challenge-pill hero-pill title-fade" style={{ animationDelay: ".65s" }}>
+              Beat {formatTime(challenge.runs[0]?.timeMs)} by {challenge.runs[0]?.name || "a rival"}
+              <ChallengeCountdown expiresAt={challenge.expiresAt} />
             </p>
-          )
-        )}
-        <ChallengeInbox />
-        <button className="primary title-start title-fade" style={{ animationDelay: "1s" }} onClick={onStart}>
-          START
-        </button>
-        <div className="title-links title-fade" style={{ animationDelay: "1.15s" }}>
-          <button className="title-guide" onClick={onGuide}>How to play</button>
-          <button className="title-guide" onClick={onBoard}>🏆 Global leaderboard</button>
-          <button className="title-guide" onClick={onFeedback}>💬 Feedback</button>
+          ) : (
+            bestTime != null && (
+              <p className="challenge-pill hero-pill title-fade" style={{ animationDelay: ".65s" }}>
+                Your best — {formatTime(bestTime)}. Chop it.
+              </p>
+            )
+          )}
+          <div className="hero-cta title-fade" style={{ animationDelay: ".8s" }}>
+            <button className="primary hero-start" onClick={onStart}>
+              {challenge ? "Take the challenge" : "Start racing"}
+            </button>
+            <button className="secondary hero-secondary" onClick={onGuide}>How to play</button>
+          </div>
+          <ChallengeInbox />
         </div>
+        <button className="scroll-cue" onClick={() => document.querySelector(".landing")?.scrollBy({ top: window.innerHeight * 0.82, behavior: "smooth" })} aria-label="See more">
+          <span>see the game</span>
+          <i>↓</i>
+        </button>
+      </section>
+
+      {/* quick value strip */}
+      <div className="value-strip">
+        <span><b>Auto-throttle</b> — pure cornering</span>
+        <span><b>Real drift physics</b></span>
+        <span><b>Day · Dusk · Night</b></span>
+        <span><b>Ghosts with names</b></span>
+        <span><b>Bronze → Gold medals</b></span>
       </div>
-      <footer className="title-credits title-fade" style={{ animationDelay: "1.3s" }}>
+
+      <section className="features">
+        <FeatureRow
+          eyebrow="The 24-hour duel"
+          title="Send it. They've got a day to answer."
+          body="Every run becomes a private leaderboard you share with one tap. Friends race your ghost, leave a message on the road, and try to chop your time. Reply late and the challenge revives — a good rivalry never expires."
+          media={
+            <div className="mock-card mock-inbox">
+              <small>Your challenges</small>
+              <div className="mock-row"><span className="d chopped" /><span>Kwame chopped you by 0.62s</span><b>↻</b></div>
+              <div className="mock-row"><span className="d live" /><span>You lead at 2:11.4 <i>· 2 new</i></span><b>3</b></div>
+              <div className="mock-share"><span>WhatsApp</span><span>SMS</span><span>Copy link</span></div>
+            </div>
+          }
+        />
+        <FeatureRow
+          flip
+          eyebrow="Time of day"
+          title="Bright noon, golden dusk, or midnight."
+          body="Pick your mood before you launch. Night flips on real headlights that pool across the asphalt, glowing tail lights, and a sky full of stars over the peaks. The same mountain, three completely different drives."
+          media={
+            <div className="mock-trio">
+              <img src="/feature-day.webp" alt="Daytime mountain race" />
+              <img src="/feature-dusk.webp" alt="Dusk mountain race" />
+              <img src="/feature-night.webp" alt="Night mountain race with headlights" />
+            </div>
+          }
+        />
+        <FeatureRow
+          eyebrow="Chase the gap"
+          title="Every corner, measured against your best."
+          body="A live gap timer ticks green when you're up and red when you're down — the exact feedback loop that makes 'one more run' irresistible. Cross the line and a medal tells you how close you are to gold."
+          media={
+            <div className="mock-card mock-gap">
+              <div className="gap-pill ahead">−0.87</div>
+              <div className="medal-row">
+                <span className="m bronze">Bronze 3:05</span>
+                <span className="m silver">Silver 2:15</span>
+                <span className="m gold">Gold 2:09</span>
+              </div>
+            </div>
+          }
+        />
+        <FeatureRow
+          flip
+          eyebrow="Learn the line"
+          title="Braking boards, ghosts, and a living mountain."
+          body="Countdown boards mark every braking point so you carry more speed each lap. Rival ghosts wear their names and times. Forests thicken, the road climbs to a summit hairpin and drops through an S-chicane built to be drifted."
+          media={
+            <div className="mock-media-img">
+              <img src="/feature-night.webp" alt="Night drifting with headlights" />
+              <span className="ghost-tag">Kaido King · 2:09.4</span>
+            </div>
+          }
+        />
+      </section>
+
+      {/* final CTA */}
+      <section className="closer">
+        <div className="brand-logo closer-logo" aria-label="CHOP FIRST">
+          <span className="brand-chop">CHOP</span>
+          <span className="brand-first">FIRST</span>
+        </div>
+        <p>Free. No install. Set a time in the next two minutes.</p>
+        <button className="primary hero-start" onClick={onStart}>{challenge ? "Take the challenge" : "Start racing"}</button>
+        <div className="closer-links">
+          <button onClick={onBoard}>🏆 Global leaderboard</button>
+          <button onClick={onFeedback}>💬 Feedback</button>
+        </div>
+      </section>
+
+      <footer className="landing-footer">
         <a href="https://www.augustwheel.com" target="_blank" rel="noopener noreferrer">augustwheel.com</a>
         <span>·</span>
         <span>by <a href="https://www.linkedin.com/in/augustineosei/" target="_blank" rel="noopener noreferrer">Augustine Osei</a></span>
