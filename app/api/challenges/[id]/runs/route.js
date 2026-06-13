@@ -19,8 +19,6 @@ export async function POST(request, { params }) {
   if (result.error === "wrongTrack") {
     return NextResponse.json({ error: "This challenge was raced on a different track", challenge: result.challenge }, { status: 409 });
   }
-  if (result.error === "expired") {
-    return NextResponse.json({ error: "Challenge expired", challenge: result.challenge }, { status: 410 });
-  }
-  return NextResponse.json(result.challenge, { status: 201 });
+  // revived: this run brought a lapsed-but-unpruned challenge back to life
+  return NextResponse.json({ ...result.challenge, revived: result.revived }, { status: 201 });
 }

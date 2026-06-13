@@ -188,14 +188,17 @@ export default function Home() {
     // auto-save so a closed tab can't lose the score; the message is optional and added after
     const target = onThisTrack(challenge) ? challenge?.runs?.[0] ?? null : null;
     setStatus("Saving your run…");
-    // a challenge from another track gets a fresh board instead of mixed times
-    const endpoint = challengeId && onThisTrack(challenge) ? `/api/challenges/${challengeId}/runs` : "/api/challenges";
-    savePromiseRef.current = fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...run, trackId: TRACK.id, deviceId: getDeviceId() }),
-    })
-      .then(async (res) => {
+    const payload = JSON.stringify({ ...run, trackId: TRACK.id, deviceId: getDeviceId() });
+    // A run on an existing same-track challenge always posts to its board —
+    // even a lapsed one, which the server revives. Only a brand-new run, or a
+    // challenge from another track, starts a fresh board.
+    const joinId = challengeId && onThisTrack(challenge) ? challengeId : null;
+    const post = (url) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: payload });
+    savePromiseRef.current = (async () => {
+      try {
+        let res = joinId ? await post(`/api/challenges/${joinId}/runs`) : await post("/api/challenges");
+        // the challenge aged out and was pruned — don't lose the run, open a fresh one
+        if (joinId && res.status === 404) res = await post("/api/challenges");
         const data = await res.json();
         if (!res.ok) {
           setStatus(data.error || "Could not save this run.");
@@ -207,14 +210,14 @@ export default function Home() {
         window.history.replaceState(null, "", `/?challenge=${data.id}`);
         upsertTracked({ id: data.id, myTimeMs: run.timeMs, lastSeenRuns: data.runs.length });
         setShareMessage(buildShareMessage(run, target, data.id));
-        setStatus("Saved to the leaderboard ✓");
+        setStatus(data.revived ? "Challenge revived — send it again ✓" : "Saved to the leaderboard ✓");
         logEvent("run_saved");
         return data;
-      })
-      .catch(() => {
+      } catch {
         setStatus("Could not save this run — check your connection.");
         return null;
-      });
+      }
+    })();
   }
 
   async function continueToResults() {
@@ -359,6 +362,7 @@ export default function Home() {
             <p className="eyebrow">24-hour challenge</p>
             <h2>Leaderboard</h2>
             <Leaderboard challenge={challenge} />
+            <p className="share-nudge">Send the link — whoever opens it gets a fresh 24 hours to chop your time.</p>
             <div className="share-row">
               <a className="primary link-button" href={`https://wa.me/?text=${shareText}`} target="_blank" onClick={() => logEvent("share_whatsapp")}>WhatsApp</a>
               <a className="secondary link-button" href={`sms:?&body=${shareText}`} onClick={() => logEvent("share_sms")}>SMS</a>
@@ -473,15 +477,15 @@ function ChallengeInbox() {
     <div className="challenge-inbox title-fade" style={{ animationDelay: ".95s" }}>
       <small>Your challenges</small>
       {items.map((item) => (
-        <a key={item.id} className="inbox-row" href={`/?challenge=${item.id}`}>
-          <span className={`inbox-dot${item.newRuns > 0 ? " live" : ""}`} />
+        <a key={item.id} className={`inbox-row${item.expired ? " dormant" : ""}`} href={`/?challenge=${item.id}`}>
+          <span className={`inbox-dot${item.newRuns > 0 ? " live" : ""}${item.chopped ? " chopped" : ""}`} />
           <span className="inbox-text">
             {item.chopped
               ? `${item.leader.name} chopped you by ${formatGap(item.myTimeMs - item.leader.timeMs)}`
               : `You lead at ${formatTime(item.myTimeMs)}`}
             {item.newRuns > 0 && <b> · {item.newRuns} new run{item.newRuns > 1 ? "s" : ""}</b>}
           </span>
-          <span className="inbox-meta">{item.expired ? "ended" : `${item.runCount} run${item.runCount === 1 ? "" : "s"}`}</span>
+          <span className="inbox-meta">{item.expired ? "↻ revive" : `${item.runCount} run${item.runCount === 1 ? "" : "s"}`}</span>
         </a>
       ))}
     </div>
@@ -501,7 +505,7 @@ function ChallengeCountdown({ expiresAt }) {
     return () => clearInterval(tick);
   }, []);
   const msLeft = new Date(expiresAt).getTime() - now;
-  if (msLeft <= 0) return <span className="countdown expired">challenge expired</span>;
+  if (msLeft <= 0) return <span className="countdown expired">dormant — race to revive it</span>;
   const hours = Math.floor(msLeft / 3600000);
   const minutes = Math.floor((msLeft % 3600000) / 60000);
   return <span className="countdown">{hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`} left to chop it</span>;

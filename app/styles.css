@@ -261,6 +261,19 @@ button {
   animation: wrong-way-flash 1.2s steps(2) infinite;
 }
 
+.inbox-dot.chopped {
+  background: #ffb12e;
+  box-shadow: 0 0 9px rgba(255, 177, 46, .8);
+}
+
+.inbox-row.dormant {
+  opacity: .72;
+}
+
+.inbox-row.dormant .inbox-meta {
+  color: #ffd15c;
+}
+
 .inbox-text {
   flex: 1;
   min-width: 0;
@@ -1292,6 +1305,14 @@ textarea:focus {
   place-items: center;
   color: #ffd15c;
   font-weight: 900;
+}
+
+.share-nudge {
+  margin: 14px 0 8px;
+  color: #b9c6d8;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
 }
 
 .share-row {
