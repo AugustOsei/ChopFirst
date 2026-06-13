@@ -1307,6 +1307,34 @@ textarea:focus {
   font-weight: 900;
 }
 
+.mode-row {
+  display: flex;
+  gap: 8px;
+}
+
+.mode-chip {
+  flex: 1;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .05);
+  color: #cfd8df;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+
+.mode-chip:hover {
+  border-color: rgba(255, 255, 255, .45);
+}
+
+.mode-chip.selected {
+  border-color: #ffd45e;
+  background: rgba(255, 212, 94, .14);
+  color: #ffe6a8;
+}
+
 .share-nudge {
   margin: 14px 0 8px;
   color: #b9c6d8;

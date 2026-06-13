@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Billboard, Sky, Text } from "@react-three/drei";
+import { Billboard, Sky, Stars, Text } from "@react-three/drei";
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import RaceHud from "./RaceHud";
@@ -44,7 +44,44 @@ const INITIAL_RACE = {
   debug: null,
 };
 
-export default function RaceGame({ driver, challenge, pbRun, onFinish, onQuit, onRestart }) {
+// Time-of-day presets. Most of the scene is MeshStandardMaterial, so changing
+// the lights + atmosphere re-skins the whole world for free; the bright road
+// markings are MeshBasic and stay legible at night like reflective paint.
+export const TIME_THEMES = {
+  day: {
+    label: "Day",
+    background: "#a8ddff",
+    fog: ["#c4e3f0", 90, 580],
+    hemisphere: ["#cfe9ff", "#3d5232", 0.55],
+    ambient: 0.35,
+    sun: { position: [40, 70, 25], color: "#fff4e0", intensity: 1.6 },
+    sky: { sunPosition: [100, 40, 40], turbidity: 8, rayleigh: 0.8 },
+    headlights: false,
+  },
+  dusk: {
+    label: "Dusk",
+    background: "#e89a5c",
+    fog: ["#d77f4e", 70, 470],
+    hemisphere: ["#ffd6a0", "#241d2c", 0.4],
+    ambient: 0.3,
+    sun: { position: [-70, 16, -38], color: "#ff9442", intensity: 1.35 },
+    sky: { sunPosition: [-28, 2.2, -100], turbidity: 12, rayleigh: 3.2, mieCoefficient: 0.02 },
+    headlights: false,
+  },
+  night: {
+    label: "Night",
+    background: "#070b16",
+    fog: ["#070b18", 50, 360],
+    hemisphere: ["#36477a", "#04060c", 0.28],
+    ambient: 0.12,
+    sun: { position: [-50, 64, 36], color: "#aebfee", intensity: 0.45 },
+    sky: null,
+    headlights: true,
+  },
+};
+
+export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", onFinish, onQuit, onRestart }) {
+  const theme = TIME_THEMES[timeOfDay] || TIME_THEMES.day;
   const inputRef = useRef({ left: false, right: false, gas: false, brake: false, handbrake: false, boost: false });
   const [race, setRace] = useState(INITIAL_RACE);
   const [showDebug, setShowDebug] = useState(false);
@@ -89,13 +126,24 @@ export default function RaceGame({ driver, challenge, pbRun, onFinish, onQuit, o
   return (
     <>
       <Canvas className="race-canvas" camera={{ position: [0, 8, 14], fov: 58, near: 0.1, far: 1100 }}>
-        <color attach="background" args={["#a8ddff"]} />
-        <fog attach="fog" args={["#c4e3f0", 90, 580]} />
-        <hemisphereLight args={["#cfe9ff", "#3d5232", 0.55]} />
-        <ambientLight intensity={0.35} />
-        <directionalLight position={[40, 70, 25]} intensity={1.6} color="#fff4e0" />
-        <Sky sunPosition={[100, 40, 40]} turbidity={8} rayleigh={0.8} />
-        <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} onFinish={onFinish} setRace={setRace} showDebug={showDebug} pausedRef={pausedRef} audio={audio} ghostLabels={ghostLabels} />
+        <color attach="background" args={[theme.background]} />
+        <fog attach="fog" args={theme.fog} />
+        <hemisphereLight args={theme.hemisphere} />
+        <ambientLight intensity={theme.ambient} />
+        <directionalLight position={theme.sun.position} intensity={theme.sun.intensity} color={theme.sun.color} />
+        {theme.sky ? (
+          <Sky {...theme.sky} />
+        ) : (
+          <>
+            <Stars radius={320} depth={80} count={1400} factor={6} saturation={0} fade speed={0.4} />
+            <mesh position={[140, 150, -260]}>
+              <sphereGeometry args={[16, 24, 24]} />
+              <meshBasicMaterial color="#eaf0ff" />
+            </mesh>
+            <pointLight position={[140, 150, -260]} color="#cdd9ff" intensity={0.6} distance={0} />
+          </>
+        )}
+        <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} onFinish={onFinish} setRace={setRace} showDebug={showDebug} pausedRef={pausedRef} audio={audio} ghostLabels={ghostLabels} headlights={theme.headlights} />
       </Canvas>
       <RaceHud race={race} driver={driver} muted={muted} onToggleMute={() => setMuted((value) => !value)} onPause={() => setPaused(true)} />
       <TouchControls controlsRef={inputRef} boosts={race.boosts} />
@@ -146,7 +194,7 @@ function PauseOverlay({ onResume, onGuide, onQuit, onRestart, ghostLabels, onTog
   );
 }
 
-function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, showDebug, pausedRef, audio, ghostLabels }) {
+function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, showDebug, pausedRef, audio, ghostLabels, headlights }) {
   const car = useMemo(() => createVehicleState(), []);
   const carRef = useRef(null);
   const roadMessages = useMemo(
@@ -278,7 +326,7 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
       <StartGantry countdownRef={countdownRef} />
       <Pickups collected={car.coins} lap={Math.min(TRACK.laps - 1, car.lap)} />
       <Ghosts challenge={challenge} pbRun={pbRun} car={car} showLabels={ghostLabels} />
-      <RaceCar ref={carRef} carState={car} color={driver?.color} />
+      <RaceCar ref={carRef} carState={car} color={driver?.color} headlights={headlights} />
       <Particles ref={smokeRef} mode="smoke" count={70} />
       <Particles ref={sparksRef} mode="spark" count={60} />
       <Particles ref={skidRef} mode="skid" count={90} />
@@ -907,7 +955,7 @@ function createCurveMarkers() {
 
 /* ----------------------------------- car ----------------------------------- */
 
-const RaceCar = forwardRef(function RaceCar({ carState, color }, ref) {
+const RaceCar = forwardRef(function RaceCar({ carState, color, headlights }, ref) {
   const paint = color || "#d81f33";
   // dark stripe on light paint, light stripe otherwise
   const stripe = ["#e8ecef", "#f5b818"].includes(paint) ? "#14181d" : "#f4f7fa";
@@ -919,6 +967,9 @@ const RaceCar = forwardRef(function RaceCar({ carState, color }, ref) {
   const flameLeft = useRef(null);
   const flameRight = useRef(null);
   const boostLight = useRef(null);
+  // headlight spotlight aims at this object, parked ahead of the nose in local
+  // space so it sweeps with the car through corners
+  const headlightTarget = useMemo(() => new THREE.Object3D(), []);
 
   useFrame((_, dt) => {
     const car = carState;
@@ -1076,7 +1127,7 @@ const RaceCar = forwardRef(function RaceCar({ carState, color }, ref) {
         {[-0.62, 0.62].map((x) => (
           <mesh key={x} position={[x, 0.62, 2.3]}>
             <boxGeometry args={[0.42, 0.13, 0.06]} />
-            <meshStandardMaterial color="#fff6d8" emissive="#ffefb0" emissiveIntensity={1.4} />
+            <meshStandardMaterial color="#fff6d8" emissive="#ffefb0" emissiveIntensity={headlights ? 2.8 : 1.4} />
           </mesh>
         ))}
         {/* tail light strip */}
@@ -1110,6 +1161,29 @@ const RaceCar = forwardRef(function RaceCar({ carState, color }, ref) {
         </group>
       ))}
       <pointLight ref={boostLight} position={[0, 0.7, -2.7]} color="#ff8c3a" intensity={0} distance={9} />
+      {headlights && (
+        <>
+          {/* the beam that actually lights the road ahead */}
+          <primitive object={headlightTarget} position={[0, -3.4, 26]} />
+          <spotLight
+            position={[0, 0.95, 2.1]}
+            target={headlightTarget}
+            color="#fff3d0"
+            intensity={42}
+            distance={62}
+            angle={0.62}
+            penumbra={0.55}
+            decay={1.1}
+          />
+          {/* visible light shafts from each lamp */}
+          {[-0.62, 0.62].map((x) => (
+            <mesh key={`beam-${x}`} position={[x, 0.6, 5.4]} rotation={[Math.PI / 2 + 0.06, 0, 0]}>
+              <coneGeometry args={[1.5, 6.6, 16, 1, true]} />
+              <meshBasicMaterial color="#fff4d2" transparent opacity={0.06} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
+            </mesh>
+          ))}
+        </>
+      )}
       {/* wheels */}
       <Wheel x={-0.88} z={1.32} steerRef={frontLeftSteer} spinRefs={spinRefs} index={0} />
       <Wheel x={0.88} z={1.32} steerRef={frontRightSteer} spinRefs={spinRefs} index={1} />

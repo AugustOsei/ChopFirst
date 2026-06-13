@@ -91,6 +91,7 @@ export default function Home() {
   const [screen, setScreen] = useState("title");
   const [driver, setDriver] = useState({ name: "", photo: "", color: CAR_COLORS[0].id });
   const [raceKey, setRaceKey] = useState(0);
+  const [timeOfDay, setTimeOfDayState] = useState("day");
   const [challengeId, setChallengeId] = useState("");
   const [challenge, setChallenge] = useState(null);
   const [result, setResult] = useState(null);
@@ -138,7 +139,14 @@ export default function Home() {
       // no PB ghost yet
     }
     setChangelogSeen(localStorage.getItem("chopfirst.seenVersion") === CURRENT_VERSION);
+    const savedTime = localStorage.getItem("chopfirst.timeOfDay");
+    if (savedTime === "day" || savedTime === "dusk" || savedTime === "night") setTimeOfDayState(savedTime);
   }, []);
+
+  function setTimeOfDay(value) {
+    setTimeOfDayState(value);
+    localStorage.setItem("chopfirst.timeOfDay", value);
+  }
 
   function openChangelog() {
     localStorage.setItem("chopfirst.seenVersion", CURRENT_VERSION);
@@ -260,6 +268,7 @@ export default function Home() {
             driver={driver}
             challenge={onThisTrack(challenge) ? challenge : null}
             pbRun={pbRun}
+            timeOfDay={timeOfDay}
             onFinish={finishRace}
             onQuit={() => setScreen("title")}
             onRestart={() => {
@@ -321,6 +330,21 @@ export default function Home() {
                     style={{ background: color.id }}
                     onClick={() => setDriver({ ...driver, color: color.id })}
                   />
+                ))}
+              </div>
+            </div>
+            <div className="field swatch-field">
+              Time of day
+              <div className="mode-row">
+                {[["day", "☀ Day"], ["dusk", "🌅 Dusk"], ["night", "🌙 Night"]].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`mode-chip${timeOfDay === id ? " selected" : ""}`}
+                    onClick={() => setTimeOfDay(id)}
+                  >
+                    {label}
+                  </button>
                 ))}
               </div>
             </div>
