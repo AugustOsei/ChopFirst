@@ -274,7 +274,7 @@ export default function Home() {
         />
       ) : (
       <main className="app-shell">
-        <section className="game-stage">
+        <section className={`game-stage${screen !== "race" ? " panel-stage" : ""}`}>
         {screen === "race" ? (
           <RaceGame
             key={raceKey}
@@ -792,7 +792,7 @@ function IntroBackdrop({ variant = "panel" }) {
   return (
     <div className="intro-backdrop">
       <img src="/cover.jpg" alt="" className="intro-art" />
-      <div className={`intro-scrim ${variant}`} />
+      <div className={`intro-scrim intro-scrim--${variant}`} />
     </div>
   );
 }
@@ -815,4 +815,3 @@ function Leaderboard({ challenge }) {
     </ol>
   );
 }
-

@@ -100,14 +100,14 @@ button {
   inset: 0;
 }
 
-.intro-scrim.panel {
+.intro-scrim--panel {
   background:
     linear-gradient(90deg, rgba(9, 14, 19, .72) 0%, rgba(9, 14, 19, .28) 46%, rgba(9, 14, 19, .05) 70%),
     linear-gradient(180deg, rgba(9, 14, 19, .25) 0%, transparent 30% 70%, rgba(9, 14, 19, .35) 100%);
 }
 
 /* title page: keep the art visible, just enough contrast for the type */
-.intro-scrim.title {
+.intro-scrim--title {
   background:
     radial-gradient(ellipse 90% 62% at 50% 44%, rgba(9, 14, 19, .42) 0%, rgba(9, 14, 19, .18) 55%, transparent 78%),
     linear-gradient(180deg, rgba(9, 14, 19, .3) 0%, transparent 22% 72%, rgba(9, 14, 19, .55) 100%);
@@ -2384,16 +2384,6 @@ kbd {
       linear-gradient(180deg, #8fd7ff 0%, #eaf8ff 48%, #6fa04e 49%, #203521 100%);
   }
 
-  .panel {
-    left: 12px;
-    right: 12px;
-    top: auto;
-    bottom: 14px;
-    transform: none;
-    width: auto;
-    padding: 18px;
-  }
-
   h1 {
     font-size: 58px;
   }
@@ -2485,5 +2475,40 @@ kbd {
   .stats-grid,
   .share-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@keyframes panel-in-mobile {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Centered, scrollable setup/result card on any touch device (covers landscape
+   phones the 720px query misses) and on narrow viewports. The desktop layout
+   pins the panel to the left over the art; here we center it and let it scroll
+   so a tall card is never clipped past the top/bottom of the screen. */
+@media (hover: none), (max-width: 720px) {
+  .panel {
+    padding: 18px;
+    animation: panel-in-mobile .32s cubic-bezier(.2, .8, .3, 1) both;
+  }
+
+  .game-stage.panel-stage {
+    display: grid;
+    place-items: center;
+    overflow-y: auto;
+    padding: calc(14px + env(safe-area-inset-top, 0px)) 12px calc(14px + env(safe-area-inset-bottom, 0px));
+    overscroll-behavior: contain;
+  }
+
+  .game-stage.panel-stage > section.panel {
+    position: relative;
+    left: auto;
+    right: auto;
+    top: auto;
+    bottom: auto;
+    width: min(440px, 100%);
+    max-height: calc(100dvh - 28px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
   }
 }
