@@ -13,7 +13,12 @@ for the next drivers on your challenge link.
 ## Features
 
 - **Arcade handling** — kinematic bicycle model with signed reverse, controllable
-  handbrake drifts, rail scrapes with sparks, and forgiving recovery.
+  handbrake drifts, rail scrapes with sparks, and forgiving recovery. Steering eases
+  into the turn so a tap nudges rather than snaps, while full-lock corners stay sharp.
+- **Times of day** — race the mountain in bright Day, golden Dusk, or moonlit Night;
+  Night lights the road with real headlights, glowing tail lights, and a starfield.
+- **Braking boards** — roadside countdown boards mark the brake points into the
+  sharpest corners, so you can learn the line and carry more speed.
 - **Boost** — three charges per run with flames, FOV kick, and screen streaks.
 - **Coin runs** — Sonic-style coin lines and arcs trace the racing line and respawn
   every lap; every 15 coins banks an extra boost charge (max 5 stocked).
@@ -21,9 +26,11 @@ for the next drivers on your challenge link.
 - **Personal-best ghost** — a gold ghost replays your fastest run on every race, synced to the start.
 - **Verified times** — runs are validated server-side against their ghost trace, so leaderboard times can't be forged with a curl one-liner.
 - **Road messages** — notes from other players appear during your race.
-- **Custom driver** — name, profile photo, and six paint colors, remembered between visits.
+- **Custom driver** — name, profile photo, six paint colors, and your time-of-day pick,
+  remembered between visits.
 - **Synthesized audio** — engine, drift screech, boost whoosh, coin chime (mutable).
-- **Touch controls** — fully playable on phones; steering pads appear automatically.
+- **Touch controls** — fully playable on phones; steering pads appear automatically,
+  and the driver-setup card centers and scrolls on any screen size.
 - **In-game feedback** — players can report bugs or suggest features from the title
   and results screens; submissions are stored server-side for the owner to review.
 

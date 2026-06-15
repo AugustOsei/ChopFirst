@@ -403,3 +403,45 @@ Known browser warning:
 - Pause overlay now shows touch hints (auto-throttle/BRAKE/DRIFT/BOOST) on
   touch devices instead of keyboard shortcuts.
 
+---
+
+## Post-MVP release log (1.1 → 1.7)
+
+The MVP rounds above land at v1.0. Subsequent player-facing releases are
+documented for players in `lib/changelog.js`; this section keeps the engineering
+notes alongside. The data model also went track-aware along the way: every run,
+challenge, and global-board entry carries a `trackId` so a second course can be
+added without migrating stored data (a short-lived AI-rivals experiment was added
+and reverted — current builds have no AI cars).
+
+- **1.1 — touch controls reworked** (`components/RaceGame.jsx`, `app/styles.css`):
+  steering moved to the bottom corners (one thumb per direction, fading 4-chevron
+  arrows), DRIFT above both arrows, BOOST a center tank showing charges, BRAKE a
+  wide bottom bar that reverses when held. Thumbs can slide between controls.
+- **1.2 — chase the gap**: live PB gap timer (green up / red down), ghost name
+  tags with times (toggle in pause), ghosts fade as you close and show brake
+  lights, bronze/silver/gold medal thresholds, instant restart (`R`).
+- **1.3 — durable challenges** (`lib/challenges.js`): every new run resets the
+  24-hour clock; any run revives a dormant challenge; the challenges inbox flags
+  who chopped you and nudges quiet ones.
+- **1.4 — times of day**: Day/Dusk/Night picker in driver setup; Night adds real
+  headlights, emissive tail lights, and a starfield. Choice persists in
+  localStorage and drives scene lighting/`theme.headlights`.
+- **1.5 — more character**: roadside braking-countdown boards into the sharp
+  corners, richer/varied forest, side mirrors and finer car detailing.
+- **1.6 — new front door**: scrollable marketing landing page, redesigned driver
+  setup (time-of-day pick inline, glossier paint chips), button/polish pass.
+  Intro scrim classes renamed to `intro-scrim--{variant}` to stop colliding with
+  the `.panel` utility class.
+- **1.7 — handling + mobile setup polish**:
+  - Steering onset softened in `game/vehicle.js`: steer wind-on rate 6.5 → 5,
+    yaw-velocity response 9.5 → 8. `MAX_STEER_LOCK`, the speed-sensitive lock,
+    and `MAX_YAW_RATE` are unchanged, so corner capability is identical — a tap
+    just eases in instead of snapping. Re-verified with `qa-sim.sh`
+    (lap completes, low-speed turn + mirrored reverse intact) and
+    `validate-sim.sh` (all anti-cheat checks pass, ghost format unchanged).
+  - Driver-setup card no longer clips on small/landscape phones: the centered,
+    self-scrolling rules moved from a `max-width: 720px`-only block into a
+    combined `@media (hover: none), (max-width: 720px)` query in `app/styles.css`
+    so they cover every touch device, not just narrow portrait ones.
+
