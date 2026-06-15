@@ -79,7 +79,10 @@ export function updateVehicle(car, input, dt) {
   // left = +steer (+yaw, toward +X); right = -steer. See yaw convention above.
   const steerTarget = (input.left ? 1 : 0) - (input.right ? 1 : 0);
   // Center faster than we wind on, so releasing the stick straightens promptly.
-  const steerRate = steerTarget === 0 ? 10 : 6.5;
+  // Wind-on is deliberately gentle so a tap eases into the turn instead of
+  // snapping the wheels over; the max lock below is unchanged, so tight corners
+  // are just as takeable — they just take a beat longer to load up.
+  const steerRate = steerTarget === 0 ? 10 : 5;
   car.steer += (steerTarget - car.steer) * (1 - Math.exp(-dt * steerRate));
   car.throttle += ((input.gas ? 1 : 0) - car.throttle) * (1 - Math.exp(-dt * 8));
   car.brake += ((input.brake ? 1 : 0) - car.brake) * (1 - Math.exp(-dt * 10));
@@ -114,7 +117,7 @@ export function updateVehicle(car, input, dt) {
     targetYawRate += car.steer * 1.4;
   }
   targetYawRate = THREE.MathUtils.clamp(targetYawRate, -MAX_YAW_RATE, MAX_YAW_RATE);
-  car.yawVelocity += (targetYawRate - car.yawVelocity) * (1 - Math.exp(-dt * 9.5));
+  car.yawVelocity += (targetYawRate - car.yawVelocity) * (1 - Math.exp(-dt * 8));
   car.yaw += car.yawVelocity * dt;
 
   // Re-decompose the carried velocity in the new heading; the lateral residue is slip.
