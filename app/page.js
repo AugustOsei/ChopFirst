@@ -859,7 +859,7 @@ function LandingPage({ challenge, onStart, onGuide, onBoard, onFeedback, onChang
           </div>
           <div className="brand-strip hero-strip" aria-hidden />
           <p className="hero-tagline title-fade" style={{ animationDelay: ".5s" }}>
-            Set a blistering time on the mountain. Send the link. Your friends get 24 hours to chop it — or admit you were faster.
+            Pick your ride. Set a blistering time on the mountain or through Accra. Send the link — your friends get 24 hours to chop it, or admit you were faster.
           </p>
           {challenge ? (
             <p className="challenge-pill hero-pill title-fade" style={{ animationDelay: ".65s" }}>
@@ -889,11 +889,11 @@ function LandingPage({ challenge, onStart, onGuide, onBoard, onFeedback, onChang
 
       {/* quick value strip */}
       <div className="value-strip">
-        <span><b>Auto-throttle</b> — pure cornering</span>
-        <span><b>Real drift physics</b></span>
+        <span><b>4 cars</b> to master</span>
+        <span><b>2 circuits</b> · mountain & city</span>
         <span><b>Day · Dusk · Night</b></span>
+        <span><b>Real drift physics</b></span>
         <span><b>Ghosts with names</b></span>
-        <span><b>Bronze → Gold medals</b></span>
       </div>
 
       <section className="features">
@@ -912,9 +912,44 @@ function LandingPage({ challenge, onStart, onGuide, onBoard, onFeedback, onChang
         />
         <FeatureRow
           flip
+          eyebrow="Pick your ride"
+          title="Four machines. Each one drives its own way."
+          body="Line up the Street Coupe against a yellow Ghana Taxi, a high-roof Trotro that wallows like a real bus, and a hover speeder that floats on blue flame. Spin each one in 3D in the garage and read its stats before you commit."
+          media={
+            <div className="mock-card mock-garage">
+              {VEHICLE_LIST.map((v) => {
+                const vs = vehicleStats(v.id);
+                return (
+                  <div className="mg-row" key={v.id}>
+                    <b>{v.name}</b>
+                    <span>{v.klass}</span>
+                    <div className="mg-bar"><i style={{ width: `${vs.bars.speed}%` }} /></div>
+                  </div>
+                );
+              })}
+            </div>
+          }
+        />
+        <FeatureRow
+          eyebrow="Two circuits"
+          title="A mountain touge and a run through Accra."
+          body="Carve the alpine Akina Ridge with its summit hairpin and drift chicane, or thread the Accra City Run past flyovers and city landmarks. Same chase-the-ghost rules, two completely different rhythms."
+          media={
+            <div className="mock-card mock-circuits">
+              {TRACK_LIST.map((t) => (
+                <div className="mc-track" key={t.id}>
+                  <svg viewBox="0 0 100 100" aria-hidden="true"><path d={trackMapPath(t.controlPoints)} className="mc-line" /></svg>
+                  <span>{t.name}<i>{t.laps} laps</i></span>
+                </div>
+              ))}
+            </div>
+          }
+        />
+        <FeatureRow
+          flip
           eyebrow="Time of day"
           title="Bright noon, golden dusk, or midnight."
-          body="Pick your mood before you launch. Night flips on real headlights that pool across the asphalt, glowing tail lights, and a sky full of stars over the peaks. The same mountain, three completely different drives."
+          body="Pick your mood before you launch. Night flips on real headlights that pool across the asphalt, glowing tail lights, and a sky full of stars. The same circuit, three completely different drives."
           media={
             <div className="mock-trio">
               <img src="/feature-day.webp" alt="Daytime mountain race" />
