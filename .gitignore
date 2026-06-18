@@ -10,6 +10,7 @@ data/
 # local tooling
 .claude/
 .qa-sim/
+.ghana-route/
 
 # env
 .env
