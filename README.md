@@ -15,6 +15,8 @@ for the next drivers on your challenge link.
 - **Arcade handling** — kinematic bicycle model with signed reverse, controllable
   handbrake drifts, rail scrapes with sparks, and forgiving recovery. Steering eases
   into the turn so a tap nudges rather than snaps, while full-lock corners stay sharp.
+- **Four cars, four feels** — Street Coupe, a nimble Ghana Taxi, a heavy slogan-board
+  Trotro, and a fast, twitchy blue-flamed Hover Bike; pick yours in driver setup.
 - **Times of day** — race the mountain in bright Day, golden Dusk, or moonlit Night;
   Night lights the road with real headlights, glowing tail lights, and a starfield.
 - **Braking boards** — roadside countdown boards mark the brake points into the
@@ -26,8 +28,8 @@ for the next drivers on your challenge link.
 - **Personal-best ghost** — a gold ghost replays your fastest run on every race, synced to the start.
 - **Verified times** — runs are validated server-side against their ghost trace, so leaderboard times can't be forged with a curl one-liner.
 - **Road messages** — notes from other players appear during your race.
-- **Custom driver** — name, profile photo, six paint colors, and your time-of-day pick,
-  remembered between visits.
+- **Custom driver** — name, profile photo, car choice, six paint colors, and your
+  time-of-day pick, remembered between visits.
 - **Synthesized audio** — engine, drift screech, boost whoosh, coin chime (mutable).
 - **Touch controls** — fully playable on phones; steering pads appear automatically,
   and the driver-setup card centers and scrolls on any screen size.
@@ -122,6 +124,19 @@ the ghost recording, or vehicle speed limits.
 ## Credits
 
 Created by [Augustine Osei](https://www.linkedin.com/in/augustineosei/) · [augustwheel.com](https://www.augustwheel.com)
+
+### 3D vehicle models
+
+The Ghana taxi, trotro, and hover speeder use glTF models from Sketchfab
+(`public/models/`), each under a Creative Commons licence requiring attribution:
+
+- **Street Coupe** — "Low-poly sports car" by **Juff22** — CC BY — https://sketchfab.com/models/23dfdeb55dc24970b36065afaab7a8a5
+- **Ghana Taxi** — "Low Poly Hong Kong Taxi" by **Han66st** — CC BY — https://sketchfab.com/models/52f3e00f0f2a4c4a894c3082639d4431
+- **Trotro** — "1999 Toyota Hi Ace Commuter" by **Yoru_Murcielago** — CC BY — https://sketchfab.com/models/285ec1a2870046ed8a85c7dee2b712af
+- **Hover speeder** — "LS-340: Land Speeder" by **MRowa** — CC BY-SA — https://sketchfab.com/models/b147d3485e6d47bbbc1cb704fccbe27b
+
+> Note: the speeder is **CC BY-SA** (ShareAlike). To avoid carrying that
+> obligation, swap it for a CC-BY or CC0 speeder model.
 
 ## License
 

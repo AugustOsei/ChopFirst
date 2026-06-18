@@ -1,13 +1,72 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import RaceGame from "../components/RaceGame";
 import GuideModal from "../components/GuideModal";
 import FeedbackModal from "../components/FeedbackModal";
 import ChangelogModal from "../components/ChangelogModal";
 import { CURRENT_VERSION } from "../lib/changelog";
 import { logEvent } from "../lib/log-event";
-import { TRACK } from "../game/track";
+import { TRACK, listTracks, setActiveTrack } from "../game/track";
+import { listVehicles, vehicleStats, DEFAULT_VEHICLE } from "../game/vehicle";
+
+// Live 3D garage preview is client-only (R3F Canvas can't server-render).
+const GaragePreview = dynamic(() => import("../components/GaragePreview"), { ssr: false });
+
+const SPEC_ROWS = [
+  ["speed", "Top Speed"],
+  ["accel", "Acceleration"],
+  ["grip", "Grip"],
+  ["agility", "Agility"],
+];
+const TOD_OPTIONS = [
+  ["day", "Day", "☀", "/feature-day.webp"],
+  ["dusk", "Dusk", "🌅", "/feature-dusk.webp"],
+  ["night", "Night", "🌙", "/feature-night.webp"],
+];
+
+// Build a top-down circuit-map SVG path from a track's [x,y,z] control points.
+function trackMapPath(controlPoints) {
+  if (!controlPoints || controlPoints.length < 2) return "";
+  const xs = controlPoints.map((p) => p[0]);
+  const zs = controlPoints.map((p) => p[2]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minZ = Math.min(...zs), maxZ = Math.max(...zs);
+  const span = Math.max(maxX - minX, maxZ - minZ) || 1;
+  const pad = 12;
+  const scale = (100 - pad * 2) / span;
+  const ox = pad + ((100 - pad * 2) - (maxX - minX) * scale) / 2;
+  const oz = pad + ((100 - pad * 2) - (maxZ - minZ) * scale) / 2;
+  const pts = controlPoints.map((p) => [ox + (p[0] - minX) * scale, oz + (p[2] - minZ) * scale]);
+  return pts.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ") + " Z";
+}
+
+function TrackCard({ track, selected, onSelect }) {
+  const km = (track.totalLength / 1000).toFixed(2);
+  const icon = track.environment === "city" ? "🏙" : "⛰";
+  return (
+    <button type="button" className={`track-card${selected ? " selected" : ""} ${track.environment}`} onClick={onSelect}>
+      <div className="track-map">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+          <path d={trackMapPath(track.controlPoints)} className="track-line-bg" />
+          <path d={trackMapPath(track.controlPoints)} className="track-line" />
+        </svg>
+        <span className="track-env">{icon}</span>
+        <span className="track-diff">{track.difficulty}</span>
+      </div>
+      <div className="track-info">
+        <h4>{track.name}</h4>
+        <p>{track.blurb}</p>
+        <div className="track-meta">
+          <span>{track.laps} laps</span>
+          <span>{km} km</span>
+          {track.medals?.gold ? <span>Gold {formatTime(track.medals.gold)}</span> : null}
+        </div>
+      </div>
+    </button>
+  );
+}
 
 function formatTime(ms) {
   const total = Math.max(0, ms || 0);
@@ -41,7 +100,10 @@ function compressPhoto(file) {
   });
 }
 
-const PB_KEY = `chopfirst.pb.${TRACK.id}`;
+const TRACK_LIST = listTracks();
+const VEHICLE_LIST = listVehicles();
+// PB is per-track; the key follows whichever track is currently active.
+const pbKey = () => `chopfirst.pb.${TRACK.id}`;
 const DEVICE_KEY = "chopfirst.device";
 const TRACKED_KEY = "chopfirst.challenges";
 
@@ -89,8 +151,13 @@ const CAR_COLORS = [
 
 export default function Home() {
   const [screen, setScreen] = useState("title");
-  const [driver, setDriver] = useState({ name: "", photo: "", color: CAR_COLORS[0].id });
+  const [driver, setDriver] = useState({ name: "", photo: "", color: CAR_COLORS[0].id, vehicle: DEFAULT_VEHICLE, track: "akina-ridge" });
   const [raceKey, setRaceKey] = useState(0);
+  // Race start can stall for a beat while the (heavy) scene geometry assembles — show
+  // a loading overlay first, mount the race a frame later so the overlay paints, then
+  // drop the overlay once RaceScene's first frame signals it's drawing (onReady).
+  const [mountRace, setMountRace] = useState(false);
+  const [raceReady, setRaceReady] = useState(false);
   const [timeOfDay, setTimeOfDayState] = useState("day");
   const [challengeId, setChallengeId] = useState("");
   const [challenge, setChallenge] = useState(null);
@@ -106,6 +173,11 @@ export default function Home() {
   const [pbRun, setPbRun] = useState(null);
   const [shareMessage, setShareMessage] = useState("");
   const savePromiseRef = useRef(null);
+
+  // Activate the selected track during render so TRACK (and everything derived
+  // from it — medals, PB key, challenge matching, run tagging) reflects it.
+  const selectedTrack = driver.track || "akina-ridge";
+  setActiveTrack(selectedTrack);
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("challenge") || "";
@@ -132,12 +204,6 @@ export default function Home() {
     } catch {
       // corrupted storage — start fresh
     }
-    try {
-      const best = JSON.parse(localStorage.getItem(PB_KEY) || "null");
-      if (best?.ghost?.length) setPbRun({ timeMs: best.timeMs, ghost: best.ghost });
-    } catch {
-      // no PB ghost yet
-    }
     setChangelogSeen(localStorage.getItem("chopfirst.seenVersion") === CURRENT_VERSION);
     const savedTime = localStorage.getItem("chopfirst.timeOfDay");
     if (savedTime === "day" || savedTime === "dusk" || savedTime === "night") setTimeOfDayState(savedTime);
@@ -148,6 +214,21 @@ export default function Home() {
     localStorage.setItem("chopfirst.timeOfDay", value);
   }
 
+  function setTrack(value) {
+    setActiveTrack(value);
+    setDriver((current) => ({ ...current, track: value }));
+  }
+
+  // Load the personal-best ghost for whichever track is selected.
+  useEffect(() => {
+    try {
+      const best = JSON.parse(localStorage.getItem(`chopfirst.pb.${selectedTrack}`) || "null");
+      setPbRun(best?.ghost?.length ? { timeMs: best.timeMs, ghost: best.ghost } : null);
+    } catch {
+      setPbRun(null);
+    }
+  }, [selectedTrack]);
+
   function openChangelog() {
     localStorage.setItem("chopfirst.seenVersion", CURRENT_VERSION);
     setChangelogSeen(true);
@@ -155,7 +236,7 @@ export default function Home() {
   }
 
   useEffect(() => {
-    if (driver.name || driver.photo || driver.color !== CAR_COLORS[0].id) {
+    if (driver.name || driver.photo || driver.color !== CAR_COLORS[0].id || (driver.vehicle && driver.vehicle !== DEFAULT_VEHICLE)) {
       localStorage.setItem("chopfirst.driver", JSON.stringify(driver));
     }
   }, [driver]);
@@ -168,24 +249,46 @@ export default function Home() {
   function startRace() {
     logEvent("race_started");
     setResult(null);
+    setRaceReady(false);
+    setMountRace(false);
     setScreen("race");
   }
+
+  // When (re)entering a race, paint the loading overlay first, then mount the heavy
+  // RaceGame two frames later so the overlay is on screen during the scene build.
+  useEffect(() => {
+    if (screen !== "race") {
+      setMountRace(false);
+      setRaceReady(false);
+      return;
+    }
+    setRaceReady(false);
+    setMountRace(false);
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setMountRace(true));
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [screen, raceKey]);
 
   function finishRace(run) {
     logEvent("race_finished");
     let stored = null;
     try {
-      stored = JSON.parse(localStorage.getItem(PB_KEY) || "null");
+      stored = JSON.parse(localStorage.getItem(pbKey()) || "null");
     } catch {
       stored = null;
     }
     const isNew = !stored || run.timeMs < stored.timeMs;
     if (isNew) {
       try {
-        localStorage.setItem(PB_KEY, JSON.stringify({ trackId: TRACK.id, timeMs: run.timeMs, at: Date.now(), ghost: run.ghost }));
+        localStorage.setItem(pbKey(), JSON.stringify({ trackId: TRACK.id, timeMs: run.timeMs, at: Date.now(), ghost: run.ghost }));
       } catch {
         // quota exceeded — keep the time without the ghost trace
-        localStorage.setItem(PB_KEY, JSON.stringify({ trackId: TRACK.id, timeMs: run.timeMs, at: Date.now() }));
+        localStorage.setItem(pbKey(), JSON.stringify({ trackId: TRACK.id, timeMs: run.timeMs, at: Date.now() }));
       }
       setPbRun({ timeMs: run.timeMs, ghost: run.ghost });
     }
@@ -274,32 +377,50 @@ export default function Home() {
         />
       ) : (
       <main className="app-shell">
-        <section className={`game-stage${screen !== "race" ? " panel-stage" : ""}`}>
+        <section className={`game-stage${screen !== "race" ? " panel-stage" : ""}${screen === "setup" ? " setup-stage" : ""}`}>
         {screen === "race" ? (
-          <RaceGame
-            key={raceKey}
-            driver={driver}
-            challenge={onThisTrack(challenge) ? challenge : null}
-            pbRun={pbRun}
-            timeOfDay={timeOfDay}
-            onFinish={finishRace}
-            onQuit={() => setScreen("title")}
-            onRestart={() => {
-              logEvent("race_started");
-              setRaceKey((value) => value + 1);
-            }}
-          />
-        ) : (
+          <>
+            {mountRace && (
+              <RaceGame
+                key={raceKey}
+                driver={driver}
+                challenge={onThisTrack(challenge) ? challenge : null}
+                pbRun={pbRun}
+                timeOfDay={timeOfDay}
+                trackId={selectedTrack}
+                onFinish={finishRace}
+                onQuit={() => setScreen("title")}
+                onReady={() => setRaceReady(true)}
+                onRestart={() => {
+                  logEvent("race_started");
+                  setRaceKey((value) => value + 1);
+                }}
+              />
+            )}
+            {!raceReady && <RaceLoading />}
+          </>
+        ) : screen === "setup" ? null : (
           <IntroBackdrop variant="panel" />
         )}
 
-        {screen === "setup" && (
-          <Panel>
-            <p className="eyebrow">Driver setup</p>
-            <h2 className="setup-title">Ready to run?</h2>
-            <p className="setup-lede">
-              {challenge ? `Chop ${challenge.runs?.[0]?.name || "the leader"}'s time. Make it yours.` : "Pick your colors and your sky, then set a time worth sending."}
-            </p>
+        {screen === "setup" && (() => {
+          const curVeh = driver.vehicle || DEFAULT_VEHICLE;
+          const stats = vehicleStats(curVeh);
+          const curTrack = TRACK_LIST.find((t) => t.id === selectedTrack) || TRACK_LIST[0];
+          const todLabel = (TOD_OPTIONS.find((o) => o[0] === timeOfDay) || TOD_OPTIONS[0])[1];
+          return (
+          <div className="garage-screen">
+            <div className="garage-inner">
+            <header className="garage-head">
+              <div>
+                <p className="eyebrow">Driver setup</p>
+                <h2 className="setup-title">Choose your machine</h2>
+                <p className="setup-lede">
+                  {challenge ? `Chop ${challenge.runs?.[0]?.name || "the leader"}'s time. Make it yours.` : "Pick your ride, your circuit and your sky."}
+                </p>
+              </div>
+              <button className="ghost-button garage-back" onClick={() => setScreen("title")}>‹ Back</button>
+            </header>
             {challenge?.messages?.length > 0 && (
               <div className="road-notes">
                 <small>Notes left on the road</small>
@@ -311,50 +432,121 @@ export default function Home() {
                 ))}
               </div>
             )}
-            <label className="field">
-              Driver name
-              <input value={driver.name} onChange={(event) => setDriver({ ...driver, name: event.target.value })} placeholder="Your racing name" />
-            </label>
-            <label className="photo-field">
-              <span>{driver.photo ? "Change profile photo" : "Upload profile photo"}</span>
-              <input type="file" accept="image/*" onChange={handlePhoto} />
-              {driver.photo && <img src={driver.photo} alt="" />}
-            </label>
-            <div className="field swatch-field">
-              Paint
-              <div className="swatch-row">
-                {CAR_COLORS.map((color) => (
+
+            <div className="garage-main">
+            <div className="g-left">
+            <div className={`garage hero-${curVeh}`}>
+              <div className="garage-hero">
+                <GaragePreview vehicle={curVeh} paint={driver.color} />
+                <span className="drag-hint">drag to rotate</span>
+              </div>
+              <div className="garage-stats">
+                <span className="veh-class">{stats.klass}</span>
+                <h3>{stats.name}</h3>
+                <div className="veh-top"><b>{stats.topSpeedKmh}</b><span>km/h top</span></div>
+                <div className="spec-bars">
+                  {SPEC_ROWS.map(([k, label]) => (
+                    <div className="spec-row" key={k}>
+                      <span>{label}</span>
+                      <div className="spec-track"><div className="spec-fill" style={{ width: `${stats.bars[k]}%` }} /></div>
+                    </div>
+                  ))}
+                </div>
+                <p className="veh-blurb">{stats.blurb}</p>
+              </div>
+            </div>
+
+            <div className="car-cards">
+              {VEHICLE_LIST.map((v) => {
+                const vs = vehicleStats(v.id);
+                return (
                   <button
-                    key={color.id}
+                    key={v.id}
                     type="button"
-                    title={color.label}
-                    aria-label={`Paint: ${color.label}`}
-                    className={`swatch${driver.color === color.id ? " selected" : ""}`}
-                    style={{ background: color.id }}
-                    onClick={() => setDriver({ ...driver, color: color.id })}
-                  />
+                    className={`car-card${curVeh === v.id ? " selected" : ""}`}
+                    onClick={() => setDriver({ ...driver, vehicle: v.id })}
+                  >
+                    <span className="cc-name">{v.name}</span>
+                    <span className="cc-class">{v.klass}</span>
+                    <div className="cc-bar"><div style={{ width: `${vs.bars.speed}%` }} /></div>
+                    <span className="cc-top">{vs.topSpeedKmh} km/h</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {curVeh === "street" && (
+              <div className="paint-row">
+                <span className="section-label">Paint</span>
+                <div className="swatch-row">
+                  {CAR_COLORS.map((color) => (
+                    <button
+                      key={color.id}
+                      type="button"
+                      title={color.label}
+                      aria-label={`Paint: ${color.label}`}
+                      className={`swatch${driver.color === color.id ? " selected" : ""}`}
+                      style={{ background: color.id }}
+                      onClick={() => setDriver({ ...driver, color: color.id })}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            </div>
+            <div className="g-right">
+            <div className="track-select">
+              <span className="section-label">Circuit</span>
+              <div className="track-cards">
+                {TRACK_LIST.map((t) => (
+                  <TrackCard key={t.id} track={t} selected={selectedTrack === t.id} onSelect={() => setTrack(t.id)} />
                 ))}
               </div>
             </div>
-            <div className="field swatch-field">
-              Time of day
-              <div className="mode-row">
-                {[["day", "☀ Day"], ["dusk", "🌅 Dusk"], ["night", "🌙 Night"]].map(([id, label]) => (
+
+            <div className="tod-select">
+              <span className="section-label">Time of day</span>
+              <div className="tod-row">
+                {TOD_OPTIONS.map(([id, label, icon, img]) => (
                   <button
                     key={id}
                     type="button"
-                    className={`mode-chip${timeOfDay === id ? " selected" : ""}`}
+                    className={`tod-card${timeOfDay === id ? " selected" : ""}`}
                     onClick={() => setTimeOfDay(id)}
                   >
-                    {label}
+                    <img src={img} alt="" />
+                    <span>{icon} {label}</span>
                   </button>
                 ))}
               </div>
             </div>
-            <button className="primary" onClick={startRace}>Start 3 laps</button>
-            <button className="ghost-button back-button" onClick={() => setScreen("title")}>‹ Back</button>
-          </Panel>
-        )}
+
+            <details className="identity">
+              <summary>Driver name &amp; photo</summary>
+              <label className="field">
+                Driver name
+                <input value={driver.name} onChange={(event) => setDriver({ ...driver, name: event.target.value })} placeholder="Your racing name" />
+              </label>
+              <label className="photo-field">
+                <span>{driver.photo ? "Change profile photo" : "Upload profile photo"}</span>
+                <input type="file" accept="image/*" onChange={handlePhoto} />
+                {driver.photo && <img src={driver.photo} alt="" />}
+              </label>
+            </details>
+
+            </div>
+            </div>
+            <div className="start-bar">
+              <div className="start-summary">
+                <b>{stats.name}</b><i>·</i><b>{curTrack?.name}</b><i>·</i><b>{todLabel}</b>
+              </div>
+              <button className="primary start-cta" onClick={startRace}>Start {curTrack?.laps || TRACK.laps} laps</button>
+            </div>
+            </div>
+          </div>
+          );
+        })()}
 
         {screen === "finish" && result && (
           <Panel>
@@ -629,7 +821,7 @@ function LandingPage({ challenge, onStart, onGuide, onBoard, onFeedback, onChang
   const [bestTime, setBestTime] = useState(null);
   useEffect(() => {
     try {
-      const stored = JSON.parse(localStorage.getItem(PB_KEY) || "null");
+      const stored = JSON.parse(localStorage.getItem(pbKey()) || "null");
       if (stored?.timeMs) setBestTime(stored.timeMs);
     } catch {
       // ignore corrupted storage
@@ -799,6 +991,17 @@ function IntroBackdrop({ variant = "panel" }) {
 
 function Panel({ children, wide }) {
   return <section className={wide ? "panel wide" : "panel"}>{children}</section>;
+}
+
+// Covers the stage while the race scene assembles (geometry build + first paint).
+function RaceLoading() {
+  return (
+    <div className="race-loading" role="status" aria-live="polite">
+      <div className="race-loading-mark">CHOP<span>FIRST</span></div>
+      <div className="race-loading-bar"><span /></div>
+      <p>Building the track…</p>
+    </div>
+  );
 }
 
 function Leaderboard({ challenge }) {

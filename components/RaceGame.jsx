@@ -2,7 +2,8 @@
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Billboard, Sky, Stars, Text } from "@react-three/drei";
-import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { GLBVehicle } from "./CarBodies";
+import { forwardRef, Suspense, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import RaceHud from "./RaceHud";
 import GuideModal from "./GuideModal";
@@ -18,6 +19,8 @@ import {
   MINIMAP,
   PICKUPS,
   pointAt,
+  projectPointToTrack,
+  setActiveTrack,
   TRACK,
 } from "../game/track";
 import { createVehicleState, getVehicleTransform, MAX_BOOST_CHARGES, updateVehicle } from "../game/vehicle";
@@ -51,11 +54,15 @@ export const TIME_THEMES = {
   day: {
     label: "Day",
     background: "#a8ddff",
-    fog: ["#c4e3f0", 90, 580],
+    // fog matches the sky so the horizon blends into the same blue instead of
+    // fading to grey; no atmospheric Sky shader (its sun-glow gradient made the
+    // sky shift blue->grey as you turned). Flat, consistent low-poly sky.
+    fog: ["#a8ddff", 120, 660],
     hemisphere: ["#cfe9ff", "#3d5232", 0.55],
     ambient: 0.35,
     sun: { position: [40, 70, 25], color: "#fff4e0", intensity: 1.6 },
-    sky: { sunPosition: [100, 40, 40], turbidity: 8, rayleigh: 0.8 },
+    sky: null,
+    stars: false,
     headlights: false,
   },
   dusk: {
@@ -66,6 +73,7 @@ export const TIME_THEMES = {
     ambient: 0.3,
     sun: { position: [-70, 16, -38], color: "#ff9442", intensity: 1.35 },
     sky: { sunPosition: [-28, 2.2, -100], turbidity: 12, rayleigh: 3.2, mieCoefficient: 0.02 },
+    stars: false,
     headlights: false,
   },
   night: {
@@ -76,11 +84,15 @@ export const TIME_THEMES = {
     ambient: 0.12,
     sun: { position: [-50, 64, 36], color: "#aebfee", intensity: 0.45 },
     sky: null,
+    stars: true,
     headlights: true,
   },
 };
 
-export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", onFinish, onQuit, onRestart }) {
+export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", trackId = "akina-ridge", onFinish, onQuit, onRestart, onReady }) {
+  // Activate the chosen track before the scene geometry and vehicle are built
+  // from it below (this component renders before its RaceScene child).
+  setActiveTrack(trackId);
   const theme = TIME_THEMES[timeOfDay] || TIME_THEMES.day;
   const inputRef = useRef({ left: false, right: false, gas: false, brake: false, handbrake: false, boost: false });
   const [race, setRace] = useState(INITIAL_RACE);
@@ -131,9 +143,8 @@ export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", 
         <hemisphereLight args={theme.hemisphere} />
         <ambientLight intensity={theme.ambient} />
         <directionalLight position={theme.sun.position} intensity={theme.sun.intensity} color={theme.sun.color} />
-        {theme.sky ? (
-          <Sky {...theme.sky} />
-        ) : (
+        {theme.sky && <Sky {...theme.sky} />}
+        {theme.stars && (
           <>
             <Stars radius={320} depth={80} count={1400} factor={6} saturation={0} fade speed={0.4} />
             <mesh position={[140, 150, -260]}>
@@ -143,7 +154,7 @@ export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", 
             <pointLight position={[140, 150, -260]} color="#cdd9ff" intensity={0.6} distance={0} />
           </>
         )}
-        <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} onFinish={onFinish} setRace={setRace} showDebug={showDebug} pausedRef={pausedRef} audio={audio} ghostLabels={ghostLabels} headlights={theme.headlights} />
+        <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} onFinish={onFinish} setRace={setRace} showDebug={showDebug} pausedRef={pausedRef} audio={audio} ghostLabels={ghostLabels} headlights={theme.headlights} onReady={onReady} />
       </Canvas>
       <RaceHud race={race} driver={driver} muted={muted} onToggleMute={() => setMuted((value) => !value)} onPause={() => setPaused(true)} />
       <TouchControls controlsRef={inputRef} boosts={race.boosts} />
@@ -194,8 +205,8 @@ function PauseOverlay({ onResume, onGuide, onQuit, onRestart, ghostLabels, onTog
   );
 }
 
-function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, showDebug, pausedRef, audio, ghostLabels, headlights }) {
-  const car = useMemo(() => createVehicleState(), []);
+function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, showDebug, pausedRef, audio, ghostLabels, headlights, onReady }) {
+  const car = useMemo(() => createVehicleState(driver?.vehicle), [driver?.vehicle]);
   const carRef = useRef(null);
   const roadMessages = useMemo(
     () => (challenge?.messages || []).filter((note) => note.message).slice(-8),
@@ -210,6 +221,7 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
   const finishedRef = useRef(false);
   const snapshotClock = useRef(0);
   const countdownRef = useRef(3);
+  const readyRef = useRef(false);
   const deltaRef = useRef({ idx: 0, maxD: -Infinity, value: null });
   const { camera, scene } = useThree();
   const trackLength = getTrackLength();
@@ -227,6 +239,12 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
   }, [car, scene, camera]);
 
   useFrame((_, delta) => {
+    // first rendered frame = the scene is built and drawing; tell the shell to drop
+    // the loading overlay (city geometry can take a beat to assemble on mount).
+    if (!readyRef.current) {
+      readyRef.current = true;
+      if (onReady) onReady();
+    }
     if (finishedRef.current || pausedRef.current) return;
     const dt = Math.min(0.033, delta);
     countdownRef.current = Math.max(-1, countdownRef.current - dt);
@@ -326,7 +344,7 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
       <StartGantry countdownRef={countdownRef} />
       <Pickups collected={car.coins} lap={Math.min(TRACK.laps - 1, car.lap)} />
       <Ghosts challenge={challenge} pbRun={pbRun} car={car} showLabels={ghostLabels} />
-      <RaceCar ref={carRef} carState={car} color={driver?.color} headlights={headlights} />
+      <RaceCar ref={carRef} carState={car} color={driver?.color} headlights={headlights} vehicle={driver?.vehicle || "street"} />
       <Particles ref={smokeRef} mode="smoke" count={70} />
       <Particles ref={sparksRef} mode="spark" count={60} />
       <Particles ref={skidRef} mode="skid" count={90} />
@@ -463,6 +481,8 @@ function TrackWorld() {
   const curveMarkers = useMemo(() => createCurveMarkers(), []);
   const brakeBoards = useMemo(() => createBrakeBoards(), []);
   const mountains = useMemo(() => createMountains(), []);
+  const isCity = TRACK.environment === "city";
+  const gateDistance = useMemo(() => (isCity ? longestStraightDistance() : 0), [isCity]);
 
   return (
     <group>
@@ -491,10 +511,10 @@ function TrackWorld() {
         <meshBasicMaterial color="#eef1ef" side={THREE.DoubleSide} />
       </mesh>
       <mesh receiveShadow geometry={leftShoulder}>
-        <meshStandardMaterial color="#4f7a3c" roughness={1} />
+        <meshStandardMaterial color={isCity ? "#6f6960" : "#4f7a3c"} roughness={1} />
       </mesh>
       <mesh receiveShadow geometry={rightShoulder}>
-        <meshStandardMaterial color="#578643" roughness={1} />
+        <meshStandardMaterial color={isCity ? "#766f64" : "#578643"} roughness={1} />
       </mesh>
       <mesh geometry={leftRail}>
         <meshStandardMaterial color="#cfd9dd" metalness={0.55} roughness={0.32} side={THREE.DoubleSide} />
@@ -504,8 +524,26 @@ function TrackWorld() {
       </mesh>
       <RailPosts />
       <Delineators />
-      <Forest />
-      <Rocks />
+      {isCity ? (
+        <>
+          <CityBuildings />
+          <CityWalls />
+          <CityTrees />
+          <CityKiosks />
+          <CityTrotros />
+          <CityUmbrellas />
+          <CityHawkers />
+          <CityFlags />
+          <CityBillboards />
+          <BlackStarGate distance={gateDistance} />
+          <CityLandmarks />
+        </>
+      ) : (
+        <>
+          <Forest />
+          <Rocks />
+        </>
+      )}
       <Grandstand />
       {curveMarkers.map((marker) => (
         <CurveMarker key={marker.key} position={marker.position} yaw={marker.yaw} direction={marker.direction} />
@@ -513,16 +551,16 @@ function TrackWorld() {
       {brakeBoards.map((board) => (
         <BrakeBoard key={board.key} position={board.position} yaw={board.yaw} count={board.count} />
       ))}
-      {mountains.map((mountain) => (
+      {!isCity && mountains.map((mountain) => (
         <mesh key={mountain.key} position={mountain.position} scale={[mountain.scale * 1.5, mountain.scale, mountain.scale * 1.5]}>
           <coneGeometry args={[1, 1.6, 6]} />
           <meshStandardMaterial color={mountain.color} roughness={1} />
         </mesh>
       ))}
       <Clouds />
-      <mesh receiveShadow position={[TRACK.center.x, -26, TRACK.center.z]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh receiveShadow position={[TRACK.center.x, isCity ? -0.05 : -26, TRACK.center.z]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[1600, 1600, 1, 1]} />
-        <meshStandardMaterial color="#558544" roughness={1} />
+        <meshStandardMaterial color={isCity ? "#8a8170" : "#558544"} roughness={1} />
       </mesh>
     </group>
   );
@@ -711,6 +749,1164 @@ function createMountains() {
     });
   }
   return items;
+}
+
+// --- Accra city environment -------------------------------------------------
+function composeMatrixBox(dummy, x, y, z, sx, sy, sz, yaw = 0) {
+  dummy.position.set(x, y, z);
+  dummy.rotation.set(0, yaw, 0);
+  dummy.scale.set(sx, sy, sz);
+  dummy.updateMatrix();
+  return dummy.matrix.clone();
+}
+
+function makeSignTexture(lines, bg = "#0b3d2e", fg = "#f7f4ec", accent = null) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, 256, 128);
+  if (accent) {
+    ctx.fillStyle = accent;
+    ctx.fillRect(0, 0, 256, 12);
+    ctx.fillRect(0, 116, 256, 12);
+  }
+  ctx.fillStyle = fg;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const size = lines.length > 1 ? 30 : 40;
+  ctx.font = `bold ${size}px sans-serif`;
+  const startY = 64 - ((lines.length - 1) * (size + 8)) / 2;
+  lines.forEach((l, i) => ctx.fillText(l, 128, startY + i * (size + 8)));
+  const t = new THREE.CanvasTexture(canvas);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+function drawStar(ctx, cx, cy, outer, inner, spikes = 5) {
+  let rot = -Math.PI / 2;
+  const step = Math.PI / spikes;
+  ctx.beginPath();
+  ctx.moveTo(cx + Math.cos(rot) * outer, cy + Math.sin(rot) * outer);
+  for (let i = 0; i < spikes; i += 1) {
+    rot += step;
+    ctx.lineTo(cx + Math.cos(rot) * inner, cy + Math.sin(rot) * inner);
+    rot += step;
+    ctx.lineTo(cx + Math.cos(rot) * outer, cy + Math.sin(rot) * outer);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+// The Ghana flag: red / gold / green bands with the lone black star.
+function makeGhanaFlag() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 120;
+  canvas.height = 80;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ce1126";
+  ctx.fillRect(0, 0, 120, 27);
+  ctx.fillStyle = "#fcd116";
+  ctx.fillRect(0, 27, 120, 26);
+  ctx.fillStyle = "#006b3f";
+  ctx.fillRect(0, 53, 120, 27);
+  ctx.fillStyle = "#0a0a0a";
+  drawStar(ctx, 60, 40, 13, 5.5);
+  const t = new THREE.CanvasTexture(canvas);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// Flat extruded 5-point star (the Black Star) for the gateway monument.
+function makeStarGeometry(outer = 1, inner = 0.42, depth = 0.4) {
+  const shape = new THREE.Shape();
+  const spikes = 5;
+  let rot = -Math.PI / 2;
+  const step = Math.PI / spikes;
+  shape.moveTo(Math.cos(rot) * outer, Math.sin(rot) * outer);
+  for (let i = 0; i < spikes; i += 1) {
+    rot += step;
+    shape.lineTo(Math.cos(rot) * inner, Math.sin(rot) * inner);
+    rot += step;
+    shape.lineTo(Math.cos(rot) * outer, Math.sin(rot) * outer);
+  }
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
+  geo.center();
+  return geo;
+}
+
+// --- Districts ---------------------------------------------------------------
+// The loop is the real Osu -> 37 Military Hospital -> Cantonments -> Osu route.
+// We bucket each point of the lap into the district it actually passes through
+// and dress that stretch to match, so the city stops being one uniform texture:
+//   - commercial  (Osu / Oxford St): dense saturated shopfronts, stacked signs,
+//                  kiosks, hawkers, parked trotros, billboards. Loud and packed.
+//   - residential (Cantonments): rendered villas set back behind compound walls
+//                  and gates, leafy shade trees, the occasional embassy flag.
+//   - institutional (37 Military Hospital / civic): big plain pale blocks,
+//                  forecourts, far fewer street vendors.
+// Anchors are the real landmark coordinates projected onto the simplified loop;
+// every lap point takes the district of its nearest anchor (wrapped arc-length).
+function buildDistricts() {
+  const length = getTrackLength();
+  const anchor = (x, z, kind) => ({
+    d: projectPointToTrack(new THREE.Vector3(x, 0, z), 0, length / 2, 320).distance,
+    kind,
+  });
+  const anchors = [
+    anchor(-181, -1376, "commercial"), // Oxford Street, Osu
+    anchor(-200, -831, "commercial"), // Danquah Circle
+    anchor(-412, 619, "institutional"), // 37 Military Hospital
+    anchor(366, -286, "residential"), // Cantonments
+  ];
+  return {
+    length,
+    at(distance) {
+      let best = anchors[0];
+      let bestGap = Infinity;
+      for (const a of anchors) {
+        const raw = (((distance - a.d) % length) + length) % length;
+        const gap = Math.min(raw, length - raw);
+        if (gap < bestGap) {
+          bestGap = gap;
+          best = a;
+        }
+      }
+      return best.kind;
+    },
+  };
+}
+
+// --- Building facades --------------------------------------------------------
+// Each archetype bakes its wall colour, window grid, and (for shops) a painted
+// ground floor + signboard into one canvas texture. Buildings are then batched
+// by archetype so a single instanced mesh shares the texture — cheap, and the
+// windows/shopfronts are what stop the boxes reading as bare cardboard.
+function makeFacadeTexture(spec) {
+  const {
+    wall, storeys = 3, cols = 4, glass = "#3c4e58", lit = "#f6e7b0",
+    shopfront = null, shopSign = null, trim = null, modern = false,
+  } = spec;
+  const W = 256;
+  const H = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = wall;
+  ctx.fillRect(0, 0, W, H);
+  // weathering: darker toward the base, faint sun-streaks down the render
+  const grime = ctx.createLinearGradient(0, 0, 0, H);
+  grime.addColorStop(0, "rgba(255,255,255,0.06)");
+  grime.addColorStop(0.7, "rgba(0,0,0,0)");
+  grime.addColorStop(1, "rgba(0,0,0,0.2)");
+  ctx.fillStyle = grime;
+  ctx.fillRect(0, 0, W, H);
+
+  const groundH = shopfront ? 72 : 6;
+  const top = 8;
+  const upperH = H - groundH - top;
+  const rowH = upperH / storeys;
+  const cellW = W / cols;
+  const winW = cellW * (modern ? 0.78 : 0.5);
+  const winH = rowH * (modern ? 0.7 : 0.56);
+
+  for (let r = 0; r < storeys; r += 1) {
+    if (trim) {
+      ctx.fillStyle = trim;
+      ctx.fillRect(0, top + r * rowH - 2, W, 3); // floor slab band
+    }
+    const cy = top + r * rowH + (rowH - winH) / 2;
+    for (let c = 0; c < cols; c += 1) {
+      const cx = (c + 0.5) * cellW - winW / 2;
+      ctx.fillStyle = "#1b1e21";
+      ctx.fillRect(cx - 2, cy - 2, winW + 4, winH + 4); // frame
+      ctx.fillStyle = (r * 7 + c * 3) % 5 === 0 ? lit : glass;
+      ctx.fillRect(cx, cy, winW, winH);
+      ctx.fillStyle = "rgba(0,0,0,0.28)";
+      ctx.fillRect(cx + winW / 2 - 1, cy, 2, winH); // mullion
+      if (!modern) ctx.fillRect(cx, cy + winH / 2 - 1, winW, 2);
+    }
+  }
+  if (trim) {
+    ctx.fillStyle = trim;
+    ctx.fillRect(0, 0, W, 8); // parapet cap
+  }
+  if (shopfront) {
+    const gy = H - groundH;
+    ctx.fillStyle = shopfront;
+    ctx.fillRect(0, gy, W, groundH);
+    ctx.fillStyle = shopSign || "#0b3d2e"; // fascia signboard band
+    ctx.fillRect(5, gy + 4, W - 10, 22);
+    ctx.fillStyle = "#243036"; // shop glazing / doorway below the fascia
+    for (let c = 0; c < cols; c += 1) {
+      const cx = (c + 0.5) * cellW;
+      ctx.fillRect(cx - winW * 0.55, gy + 32, winW * 1.1, groundH - 40);
+    }
+  }
+  const t = new THREE.CanvasTexture(canvas);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+const FACADE_SPECS = [
+  // 0-3 commercial (Osu / Oxford St): bright telecom-branded shopfronts
+  { wall: "#e7dcc4", storeys: 3, cols: 4, shopfront: "#0a7cc1", shopSign: "#ffcb05", trim: "#cdbf9f" },
+  { wall: "#d8a98c", storeys: 2, cols: 4, shopfront: "#e30613", shopSign: "#ffffff", trim: "#c08c70" },
+  { wall: "#efe9dd", storeys: 4, cols: 5, shopfront: "#13a05a", shopSign: "#ffffff", glass: "#2f4a55" },
+  { wall: "#d8c79a", storeys: 2, cols: 4, shopfront: "#f47b20", shopSign: "#1a1a1a", trim: "#bfa978" },
+  // 4-6 residential (Cantonments): calm rendered villas, no shopfront
+  { wall: "#f1efe6", storeys: 2, cols: 3, glass: "#4a5b63", trim: "#ddd8c8" },
+  { wall: "#e3dcc7", storeys: 2, cols: 3, glass: "#43545c" },
+  { wall: "#cfd4d6", storeys: 3, cols: 4, glass: "#36505c", modern: true, trim: "#b9c0c2" },
+  // 7-8 institutional / civic (37 Military Hospital): plain pale slabs
+  { wall: "#eef0ea", storeys: 3, cols: 5, glass: "#41545c", trim: "#dfe2da" },
+  { wall: "#e7e3d6", storeys: 4, cols: 5, glass: "#3c4d54" },
+  // 9 distant skyline: glassy tower
+  { wall: "#b9c4cb", storeys: 7, cols: 5, glass: "#33505f", modern: true, trim: "#9fb0b8" },
+];
+const DISTRICT_FACADES = {
+  commercial: [0, 1, 2, 3],
+  residential: [4, 5, 6],
+  institutional: [7, 8],
+};
+// terracotta / rusted-zinc / dark roofing for pitched residential roofs
+const PITCHED_COLORS = ["#8a4b3a", "#7d5a4a", "#6f7d86", "#9a5a44", "#55606a"];
+
+function CityBuildings() {
+  const data = useMemo(() => {
+    const dummy = new THREE.Object3D();
+    const districts = buildDistricts();
+    const facadeTex = FACADE_SPECS.map(makeFacadeTexture);
+    const buckets = facadeTex.map(() => []); // matrices per facade archetype
+    const flatRoofs = [];
+    const stairwells = [];
+    const pitched = [];
+    const pitchedColors = [];
+    const tanks = [];
+    const length = getTrackLength();
+    const plan = buildLandmarkPlan();
+    const pitchPalette = PITCHED_COLORS.map((c) => new THREE.Color(c));
+
+    const addBuilding = (pos, w, h, d, yaw, district, band) => {
+      const hash = Math.abs(Math.round(pos.x * 3.1 + pos.z * 7.3 + w * 11 + d * 5));
+      const choices = DISTRICT_FACADES[district] || DISTRICT_FACADES.institutional;
+      const fi = choices[hash % choices.length];
+      buckets[fi].push(composeMatrixBox(dummy, pos.x, pos.y + h / 2, pos.z, w, h, d, yaw));
+      // local axes for placing rooftop clutter inside the footprint
+      const rx = Math.cos(yaw);
+      const rz = -Math.sin(yaw);
+      if (district === "residential" && band === 0) {
+        // low villa: hip roof in zinc / terracotta (cone is rotated 45° so its
+        // eaves line up with the walls), no rooftop tanks on show
+        pitched.push(composeMatrixBox(dummy, pos.x, pos.y + h + 0.95, pos.z, w * 0.8, 2.0, d * 0.8, yaw + Math.PI / 4));
+        pitchedColors.push(pitchPalette[hash % pitchPalette.length]);
+      } else {
+        flatRoofs.push(composeMatrixBox(dummy, pos.x, pos.y + h + 0.1, pos.z, w + 0.4, 0.35, d + 0.4, yaw));
+        if (hash % 4 !== 0) {
+          // rooftop stairwell / penthouse box for silhouette
+          stairwells.push(composeMatrixBox(dummy, pos.x + rx * w * 0.18, pos.y + h + 0.9, pos.z + rz * w * 0.18, w * 0.3, 1.4, d * 0.3, yaw));
+        }
+        if (hash % 3 !== 0) {
+          // black poly water tank(s) — the signature Accra rooftop element
+          const n = hash % 5 === 0 ? 2 : 1;
+          for (let k = 0; k < n; k += 1) {
+            const ox = rx * (w * (0.22 - k * 0.18)) + Math.sin(yaw) * (d * 0.2);
+            const oz = rz * (w * (0.22 - k * 0.18)) + Math.cos(yaw) * (d * 0.2);
+            tanks.push(composeMatrixBox(dummy, pos.x - ox, pos.y + h + 0.85, pos.z - oz, 1, 1, 1, 0));
+          }
+        }
+      }
+    };
+
+    // two depth bands of roadside blocks either side of the street
+    for (let distance = 0; distance < length; distance += 11) {
+      if (!clearOfLandmarks(distance, plan, length)) continue; // leave room for set-pieces
+      const frame = getTrackFrame(distance);
+      const yawBase = Math.atan2(frame.tangent.x, frame.tangent.z);
+      const district = districts.at(distance);
+      const residential = district === "residential";
+      let i = Math.round(distance);
+      for (const side of [-1, 1]) {
+        for (const band of [0, 1]) {
+          i += 7;
+          if (i % 8 === 0) continue; // alleys / forecourts / driveways
+          let w = 5 + ((i * 5) % 6);
+          let d = 5 + ((i * 3) % 7);
+          let h = 3 + ((i * 13) % 9) * 0.95 + band * 1.6;
+          if (residential) {
+            h = 4 + ((i * 5) % 4) * 0.9; // low villas, fairly uniform
+          } else if (district === "commercial") {
+            h += 1.4; // taller shop blocks crowding the street
+          }
+          // villas sit further back behind their compound walls
+          const setback = residential ? 11 : 8;
+          const off = side * (TRACK.railOffset + setback + band * 15 + ((i * 7) % 6));
+          const pos = frame.position.clone().addScaledVector(frame.normal, off);
+          // clear by the building's own half-extent so corners never poke into
+          // the road, even on the inside of tight bends (very fine sampling: at
+          // the default 220 samples the ~23 m gaps let blocks slip onto the road)
+          if (!isPointClearOfRoad(pos, TRACK.railOffset + Math.max(w, d) / 2 + 2, 1600)) continue;
+          const yaw = yawBase + (((i * 17) % 7) - 3) * 0.04;
+          addBuilding(pos, w, h, d, yaw, district, band);
+        }
+      }
+    }
+
+    // distant skyline ring (always the glassy tower archetype)
+    for (let k = 0; k < 80; k += 1) {
+      const angle = (k / 80) * Math.PI * 2 + 0.3;
+      const radius = 175 + ((k * 47) % 190);
+      const pos = new THREE.Vector3(TRACK.center.x + Math.cos(angle) * radius, 0, TRACK.center.z + Math.sin(angle) * radius);
+      if (!isPointClearOfRoad(pos, TRACK.railOffset + 40)) continue;
+      const w = 8 + ((k * 5) % 10);
+      const d = 8 + ((k * 7) % 10);
+      const h = 9 + ((k * 13) % 22);
+      const yaw = (k * 0.5) % Math.PI;
+      buckets[9].push(composeMatrixBox(dummy, pos.x, h / 2, pos.z, w, h, d, yaw));
+      flatRoofs.push(composeMatrixBox(dummy, pos.x, h + 0.2, pos.z, w + 0.4, 0.4, d + 0.4, yaw));
+    }
+
+    return {
+      facadeTex,
+      buckets,
+      flatRoofs,
+      stairwells,
+      pitched,
+      pitchedColors,
+      tanks,
+      boxGeometry: new THREE.BoxGeometry(1, 1, 1),
+      facadeMaterials: facadeTex.map((map) => new THREE.MeshStandardMaterial({ map, roughness: 0.88 })),
+      flatRoofMaterial: new THREE.MeshStandardMaterial({ color: "#5c5650", roughness: 0.95 }),
+      stairwellMaterial: new THREE.MeshStandardMaterial({ color: "#7a7269", roughness: 0.9 }),
+      // 4-sided cone = hip roof at low poly
+      pitchedGeometry: new THREE.ConeGeometry(0.72, 1, 4),
+      pitchedMaterial: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.9 }),
+      tankGeometry: new THREE.CylinderGeometry(0.55, 0.55, 1.1, 10),
+      tankMaterial: new THREE.MeshStandardMaterial({ color: "#1c1c1e", roughness: 0.7 }),
+    };
+  }, []);
+  return (
+    <>
+      {data.buckets.map((matrices, idx) => (
+        matrices.length ? (
+          <Instances key={idx} matrices={matrices} geometry={data.boxGeometry} material={data.facadeMaterials[idx]} castShadow />
+        ) : null
+      ))}
+      <Instances matrices={data.flatRoofs} geometry={data.boxGeometry} material={data.flatRoofMaterial} />
+      <Instances matrices={data.stairwells} geometry={data.boxGeometry} material={data.stairwellMaterial} castShadow />
+      <Instances matrices={data.pitched} colors={data.pitchedColors} geometry={data.pitchedGeometry} material={data.pitchedMaterial} castShadow />
+      <Instances matrices={data.tanks} geometry={data.tankGeometry} material={data.tankMaterial} castShadow />
+    </>
+  );
+}
+
+// Vegetation by district: leafy shade trees fill the green Cantonments avenues,
+// street palms punctuate the commercial/civic stretches.
+function CityTrees() {
+  const data = useMemo(() => {
+    const dummy = new THREE.Object3D();
+    const districts = buildDistricts();
+    const palmTrunks = [];
+    const palmCrowns = [];
+    const treeTrunks = [];
+    const treeCanopies = [];
+    const treeColors = [];
+    const greens = ["#2f7d3f", "#266b36", "#3a8a49", "#1f5e2f"].map((c) => new THREE.Color(c));
+    const length = getTrackLength();
+    for (let i = 0; i < 200; i += 1) {
+      const distance = (i / 200) * length;
+      const frame = getTrackFrame(distance);
+      const district = districts.at(distance);
+      const side = i % 2 ? 1 : -1;
+      const off = side * (TRACK.railOffset + 3.4 + ((i * 11) % 4));
+      const pos = frame.position.clone().addScaledVector(frame.normal, off);
+      // keep the whole canopy off the road, not just the trunk
+      if (!isPointClearOfRoad(pos, TRACK.railOffset + 3.4, 1600)) continue;
+      if (district === "residential") {
+        // dense, rounded shade trees
+        const h = 4.5 + ((i * 7) % 6) * 0.55;
+        const r = 2.6 + ((i * 5) % 4) * 0.4;
+        treeTrunks.push(composeMatrixBox(dummy, pos.x, pos.y + h / 2, pos.z, 0.9, h, 0.9, (i * 0.6) % Math.PI));
+        treeCanopies.push(composeMatrixBox(dummy, pos.x, pos.y + h + r * 0.5, pos.z, r, r * 0.95, r, (i * 1.3) % Math.PI));
+        treeColors.push(greens[i % greens.length]);
+      } else if (i % 3 === 0) {
+        // sparser street palms elsewhere
+        const h = 3.6 + ((i * 7) % 6) * 0.5;
+        palmTrunks.push(composeMatrixBox(dummy, pos.x, pos.y + h / 2, pos.z, 0.6, h, 0.6, (i * 0.6) % Math.PI));
+        palmCrowns.push(composeMatrixBox(dummy, pos.x, pos.y + h + 0.2, pos.z, 1, 1, 1, (i * 1.1) % Math.PI));
+      }
+    }
+    return {
+      palmTrunks, palmCrowns, treeTrunks, treeCanopies, treeColors,
+      palmTrunkGeometry: new THREE.CylinderGeometry(0.18, 0.32, 1, 6),
+      palmCrownGeometry: new THREE.ConeGeometry(2.6, 1.5, 6),
+      palmTrunkMaterial: new THREE.MeshStandardMaterial({ color: "#9c7c4d", roughness: 1 }),
+      palmCrownMaterial: new THREE.MeshStandardMaterial({ color: "#3f7d39", roughness: 0.85 }),
+      treeTrunkGeometry: new THREE.CylinderGeometry(0.22, 0.34, 1, 6),
+      treeCanopyGeometry: new THREE.IcosahedronGeometry(1, 0),
+      treeTrunkMaterial: new THREE.MeshStandardMaterial({ color: "#6a4a2c", roughness: 1 }),
+      treeCanopyMaterial: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.9 }),
+    };
+  }, []);
+  return (
+    <>
+      <Instances matrices={data.palmTrunks} geometry={data.palmTrunkGeometry} material={data.palmTrunkMaterial} castShadow />
+      <Instances matrices={data.palmCrowns} geometry={data.palmCrownGeometry} material={data.palmCrownMaterial} castShadow />
+      <Instances matrices={data.treeTrunks} geometry={data.treeTrunkGeometry} material={data.treeTrunkMaterial} castShadow />
+      <Instances matrices={data.treeCanopies} colors={data.treeColors} geometry={data.treeCanopyGeometry} material={data.treeCanopyMaterial} castShadow />
+    </>
+  );
+}
+
+// Cantonments compound walls: a low rendered boundary wall hugging the road on
+// residential stretches, broken by gate piers — what you actually see driving
+// past the embassies and villas.
+function CityWalls() {
+  const data = useMemo(() => {
+    const dummy = new THREE.Object3D();
+    const districts = buildDistricts();
+    const walls = [];
+    const piers = [];
+    const length = getTrackLength();
+    const step = 6;
+    let i = 0;
+    for (let distance = 0; distance < length; distance += step) {
+      if (districts.at(distance) !== "residential") continue;
+      const frame = getTrackFrame(distance);
+      const yaw = Math.atan2(frame.tangent.x, frame.tangent.z);
+      for (const side of [-1, 1]) {
+        i += 1;
+        const off = side * (TRACK.railOffset + 3.8);
+        const pos = frame.position.clone().addScaledVector(frame.normal, off);
+        if (!isPointClearOfRoad(pos, TRACK.railOffset + 2.8, 1600)) continue;
+        if (i % 6 === 0) {
+          // gate gap: a pair of taller piers, no wall segment
+          for (const t of [-1, 1]) {
+            const px = pos.x + Math.sin(yaw) * t * 2;
+            const pz = pos.z + Math.cos(yaw) * t * 2;
+            piers.push(composeMatrixBox(dummy, px, pos.y + 1.4, pz, 0.7, 2.8, 0.7, yaw));
+          }
+        } else {
+          walls.push(composeMatrixBox(dummy, pos.x, pos.y + 1.05, pos.z, 0.35, 2.1, step + 0.3, yaw));
+        }
+      }
+    }
+    return {
+      walls, piers,
+      boxGeometry: new THREE.BoxGeometry(1, 1, 1),
+      wallMaterial: new THREE.MeshStandardMaterial({ color: "#dcd6c6", roughness: 0.95 }),
+      pierMaterial: new THREE.MeshStandardMaterial({ color: "#cdc6b4", roughness: 0.9 }),
+    };
+  }, []);
+  return (
+    <>
+      <Instances matrices={data.walls} geometry={data.boxGeometry} material={data.wallMaterial} castShadow />
+      <Instances matrices={data.piers} geometry={data.boxGeometry} material={data.pierMaterial} castShadow />
+    </>
+  );
+}
+
+const UMBRELLA_COLORS = ["#ffcb05", "#e30613", "#0a7cc1", "#13a05a", "#f47b20", "#ffffff"];
+
+// Roadside placement: walk the lap, drop spots either side, skip anything that
+// would sit on the road. `face` orients a prop's front toward the street, and
+// `distance` lets callers thin a prop out by district.
+function roadsideSpots({ step, base, jitter = 4, seed = 1, sides = [-1, 1] }) {
+  const out = [];
+  const length = getTrackLength();
+  const plan = buildLandmarkPlan();
+  let i = seed;
+  for (let distance = 0; distance < length; distance += step) {
+    // keep a clear apron right around each set-piece so props don't bury it
+    let nearLandmark = false;
+    for (const l of plan) {
+      const raw = (((distance - l.distance) % length) + length) % length;
+      if (Math.min(raw, length - raw) < 16) { nearLandmark = true; break; }
+    }
+    if (nearLandmark) continue;
+    const frame = getTrackFrame(distance);
+    const yaw = Math.atan2(frame.tangent.x, frame.tangent.z);
+    for (const s of sides) {
+      i += 1;
+      const off = s * (TRACK.railOffset + base + ((i * 7) % jitter));
+      const pos = frame.position.clone().addScaledVector(frame.normal, off);
+      // fine sampling so props don't slip onto the road between checks on bends
+      if (!isPointClearOfRoad(pos, TRACK.railOffset + 1.8, 1600)) continue;
+      out.push({ pos: [pos.x, pos.y, pos.z], yaw, face: yaw + s * Math.PI / 2, side: s, i, distance });
+    }
+  }
+  return out;
+}
+
+function longestStraightDistance() {
+  const length = getTrackLength();
+  const step = 5;
+  let best = { len: 0, mid: length * 0.05 };
+  let runStart = 0;
+  let running = false;
+  for (let d = 0; d <= length; d += step) {
+    const straight = Math.abs(getTrackFrame(d).curvature) < 0.5;
+    if (straight && !running) { running = true; runStart = d; }
+    if ((!straight || d >= length) && running) {
+      running = false;
+      const len = d - runStart;
+      if (len > best.len) best = { len, mid: runStart + len / 2 };
+    }
+  }
+  return best.mid;
+}
+
+// Street-vendor stalls — a parasol over a goods table. They crowd the Osu
+// commercial pavements and disappear in the quiet residential avenues.
+function CityUmbrellas() {
+  const data = useMemo(() => {
+    const dummy = new THREE.Object3D();
+    const districts = buildDistricts();
+    const poles = [];
+    const canopies = [];
+    const tables = [];
+    const canopyColors = [];
+    const pal = UMBRELLA_COLORS.map((c) => new THREE.Color(c));
+    roadsideSpots({ step: 13, base: 2.4, jitter: 5, seed: 3 }).forEach((s) => {
+      if (districts.at(s.distance) !== "commercial") return;
+      if (s.i % 2) return;
+      const [x, y, z] = s.pos;
+      poles.push(composeMatrixBox(dummy, x, y + 1.1, z, 1, 2.2, 1, 0));
+      canopies.push(composeMatrixBox(dummy, x, y + 2.5, z, 1, 1, 1, s.i * 0.5));
+      tables.push(composeMatrixBox(dummy, x, y + 0.85, z, 1.9, 0.18, 1.1, s.face));
+      canopyColors.push(pal[s.i % pal.length]);
+    });
+    return {
+      poles, canopies, tables, canopyColors,
+      poleGeometry: new THREE.CylinderGeometry(0.05, 0.05, 1, 5),
+      canopyGeometry: new THREE.ConeGeometry(1.8, 0.85, 8),
+      tableGeometry: new THREE.BoxGeometry(1, 1, 1),
+      poleMaterial: new THREE.MeshStandardMaterial({ color: "#5a4a36", roughness: 1 }),
+      canopyMaterial: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.85 }),
+      tableMaterial: new THREE.MeshStandardMaterial({ color: "#6b5236", roughness: 0.9 }),
+    };
+  }, []);
+  return (
+    <>
+      <Instances matrices={data.poles} geometry={data.poleGeometry} material={data.poleMaterial} />
+      <Instances matrices={data.tables} geometry={data.tableGeometry} material={data.tableMaterial} castShadow />
+      <Instances matrices={data.canopies} colors={data.canopyColors} geometry={data.canopyGeometry} material={data.canopyMaterial} castShadow />
+    </>
+  );
+}
+
+// Pedestrians: low-poly figures (body + head) clustered on the busy Osu
+// pavements where the hawkers and shoppers actually are.
+function CityHawkers() {
+  const data = useMemo(() => {
+    const dummy = new THREE.Object3D();
+    const districts = buildDistricts();
+    const bodies = [];
+    const heads = [];
+    const bodyColors = [];
+    const headColors = [];
+    const shirts = ["#e30613", "#0a7cc1", "#13a05a", "#f47b20", "#ffcb05", "#7b3fa0", "#f4f4f0"].map((c) => new THREE.Color(c));
+    const skin = ["#5a3a23", "#6b4326", "#7a4e2c", "#4a2f1d"].map((c) => new THREE.Color(c));
+    roadsideSpots({ step: 7, base: 1.6, jitter: 3, seed: 21 }).forEach((s) => {
+      if (districts.at(s.distance) !== "commercial") return;
+      if (s.i % 2) return;
+      const [x, y, z] = s.pos;
+      const h = 1.5 + ((s.i * 5) % 4) * 0.07;
+      bodies.push(composeMatrixBox(dummy, x, y + h / 2, z, 1, h, 1, s.i * 0.7));
+      heads.push(composeMatrixBox(dummy, x, y + h + 0.16, z, 1, 1, 1, 0));
+      bodyColors.push(shirts[s.i % shirts.length]);
+      headColors.push(skin[s.i % skin.length]);
+    });
+    return {
+      bodies, heads, bodyColors, headColors,
+      bodyGeometry: new THREE.CylinderGeometry(0.2, 0.26, 1, 6),
+      headGeometry: new THREE.SphereGeometry(0.18, 6, 5),
+      bodyMaterial: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.9 }),
+      headMaterial: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.95 }),
+    };
+  }, []);
+  return (
+    <>
+      <Instances matrices={data.bodies} colors={data.bodyColors} geometry={data.bodyGeometry} material={data.bodyMaterial} castShadow />
+      <Instances matrices={data.heads} colors={data.headColors} geometry={data.headGeometry} material={data.headMaterial} castShadow />
+    </>
+  );
+}
+
+// Flags belong to the embassies and missions of Cantonments, not the whole
+// city — so they only fly on residential stretches, and sparingly.
+function CityFlags() {
+  const flagTex = useMemo(() => makeGhanaFlag(), []);
+  const data = useMemo(() => {
+    const dummy = new THREE.Object3D();
+    const districts = buildDistricts();
+    const poles = [];
+    const flags = [];
+    roadsideSpots({ step: 64, base: 3.0, jitter: 3, seed: 9 }).forEach((s) => {
+      if (districts.at(s.distance) !== "residential") return;
+      if (s.i % 2) return;
+      const [x, y, z] = s.pos;
+      const t = [Math.sin(s.yaw), 0, Math.cos(s.yaw)];
+      poles.push(composeMatrixBox(dummy, x, y + 3, z, 1, 6, 1, 0));
+      flags.push(composeMatrixBox(dummy, x + t[0] * 1.3, y + 5.1, z + t[2] * 1.3, 1, 1, 1, s.yaw));
+    });
+    return {
+      poles, flags,
+      poleGeometry: new THREE.CylinderGeometry(0.06, 0.06, 1, 6),
+      poleMaterial: new THREE.MeshStandardMaterial({ color: "#d7d7d7", metalness: 0.4, roughness: 0.5 }),
+      flagGeometry: new THREE.PlaneGeometry(2.4, 1.6),
+      flagMaterial: new THREE.MeshStandardMaterial({ map: flagTex, side: THREE.DoubleSide, roughness: 0.8 }),
+    };
+  }, [flagTex]);
+  return (
+    <>
+      <Instances matrices={data.poles} geometry={data.poleGeometry} material={data.poleMaterial} />
+      <Instances matrices={data.flags} geometry={data.flagGeometry} material={data.flagMaterial} />
+    </>
+  );
+}
+
+const KIOSK_BRANDS = [
+  { color: "#ffcb05", lines: ["MTN"], fg: "#003a70" },
+  { color: "#e30613", lines: ["TELECEL"], fg: "#ffffff" },
+  { color: "#0a7cc1", lines: ["MOMO"], fg: "#ffffff" },
+  { color: "#13a05a", lines: ["CHOP", "BAR"], fg: "#ffffff" },
+  { color: "#f47b20", lines: ["PROVISIONS"], fg: "#1a1a1a" },
+  { color: "#ffcb05", lines: ["MOBILE", "MONEY"], fg: "#003a70" },
+];
+
+function CityKiosks() {
+  const brands = useMemo(() => KIOSK_BRANDS.map((b) => ({ ...b, tex: makeSignTexture(b.lines, b.color, b.fg) })), []);
+  const districts = useMemo(buildDistricts, []);
+  const spots = useMemo(() => roadsideSpots({ step: 13, base: 2.0, jitter: 4, seed: 5 }), []);
+  return spots.map((s, idx) => {
+    const district = districts.at(s.distance);
+    if (district === "residential") return null; // no roadside kiosks behind the walls
+    if (district === "institutional" && s.i % 2 === 0) return null; // sparse near the hospital
+    if (s.i % 3 === 0) return null;
+    const b = brands[s.i % brands.length];
+    const [x, y, z] = s.pos;
+    return (
+      <group key={`kiosk-${idx}`} position={[x, y, z]} rotation={[0, s.face, 0]}>
+        <mesh castShadow position={[0, 1.1, 0]}>
+          <boxGeometry args={[2.8, 2.2, 2.2]} />
+          <meshStandardMaterial color={b.color} roughness={0.7} />
+        </mesh>
+        <mesh position={[0, 2.35, 0]}>
+          <boxGeometry args={[3.1, 0.28, 2.5]} />
+          <meshStandardMaterial color="#2f2f2f" roughness={0.8} />
+        </mesh>
+        <mesh position={[0, 1.55, 1.13]}>
+          <planeGeometry args={[2.5, 1.0]} />
+          <meshStandardMaterial map={b.tex} emissive={b.color} emissiveIntensity={0.18} />
+        </mesh>
+      </group>
+    );
+  });
+}
+
+const TROTRO_DESTS = [["CIRCLE"], ["37"], ["OSU"], ["ACCRA"], ["LAPAZ"], ["MADINA"], ["KANESHIE"], ["TEMA"]];
+
+function CityTrotros() {
+  const dests = useMemo(() => TROTRO_DESTS.map((d) => makeSignTexture(d, "#16213a", "#ffd54a")), []);
+  const districts = useMemo(buildDistricts, []);
+  const spots = useMemo(() => roadsideSpots({ step: 30, base: 3.4, jitter: 3, seed: 7 }), []);
+  return spots.map((s, idx) => {
+    if (districts.at(s.distance) === "residential") return null; // no parked trotros in the embassy quarter
+    if (s.i % 2) return null;
+    const [x, y, z] = s.pos;
+    const tex = dests[s.i % dests.length];
+    const body = s.i % 3 === 0 ? "#ffce3a" : s.i % 3 === 1 ? "#f4f4f0" : "#e9e9e4";
+    return (
+      <group key={`tro-${idx}`} position={[x, y, z]} rotation={[0, s.yaw, 0]}>
+        <mesh castShadow position={[0, 1.2, 0]}>
+          <boxGeometry args={[2.2, 2.0, 5.2]} />
+          <meshStandardMaterial color={body} roughness={0.55} metalness={0.1} />
+        </mesh>
+        <mesh position={[0, 1.85, 0]}>
+          <boxGeometry args={[2.24, 0.85, 4.0]} />
+          <meshStandardMaterial color="#243240" roughness={0.25} metalness={0.3} />
+        </mesh>
+        <mesh position={[0, 2.32, 0]}>
+          <boxGeometry args={[2.1, 0.3, 4.8]} />
+          <meshStandardMaterial color={body} roughness={0.55} />
+        </mesh>
+        <mesh position={[0, 1.35, -2.62]}>
+          <planeGeometry args={[1.8, 0.6]} />
+          <meshStandardMaterial map={tex} />
+        </mesh>
+        {[-1.75, 1.75].map((wz) => [-1.02, 1.02].map((wx) => (
+          <mesh key={`${wz}-${wx}`} position={[wx, 0.42, wz]} rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.42, 0.42, 0.22, 8]} />
+            <meshStandardMaterial color="#14161a" />
+          </mesh>
+        )))}
+      </group>
+    );
+  });
+}
+
+const BILLBOARD_LINES = [["AKWAABA", "TO ACCRA"], ["GHANA", "BLACK STARS"], ["ICE COLD", "MINERALS"], ["MTN", "EVERYWHERE YOU GO"]];
+
+function CityBillboards() {
+  const boards = useMemo(() => BILLBOARD_LINES.map((b, i) => makeSignTexture(b, ["#0a7cc1", "#006b3f", "#e30613", "#ffcb05"][i % 4], i === 3 ? "#003a70" : "#ffffff")), []);
+  const districts = useMemo(buildDistricts, []);
+  const spots = useMemo(() => roadsideSpots({ step: 88, base: 7, jitter: 4, seed: 11 }), []);
+  return spots.map((s, idx) => {
+    if (districts.at(s.distance) === "residential") return null; // billboards line the arterials, not the quiet streets
+    if (s.i % 2) return null;
+    const [x, y, z] = s.pos;
+    const tex = boards[s.i % boards.length];
+    return (
+      <group key={`bb-${idx}`} position={[x, y, z]} rotation={[0, s.face, 0]}>
+        <mesh position={[-2.4, 3, 0]}><boxGeometry args={[0.3, 6, 0.3]} /><meshStandardMaterial color="#555" /></mesh>
+        <mesh position={[2.4, 3, 0]}><boxGeometry args={[0.3, 6, 0.3]} /><meshStandardMaterial color="#555" /></mesh>
+        <mesh position={[0, 6.6, 0.1]}><planeGeometry args={[8, 3.4]} /><meshStandardMaterial map={tex} side={THREE.DoubleSide} /></mesh>
+      </group>
+    );
+  });
+}
+
+// The Black Star Gate — Accra's defining monument, built to drive under.
+function BlackStarGate({ distance }) {
+  const star = useMemo(() => makeStarGeometry(1, 0.42, 0.6), []);
+  const inscription = useMemo(() => makeSignTexture(["FREEDOM AND JUSTICE"], "#8a1f1f", "#f7f0e0"), []);
+  const { pos, yaw } = useMemo(() => {
+    const frame = getTrackFrame(distance);
+    const p = frame.position.clone();
+    return { pos: [p.x, p.y, p.z], yaw: Math.atan2(frame.tangent.x, frame.tangent.z) };
+  }, [distance]);
+  return (
+    <group position={pos} rotation={[0, yaw, 0]}>
+      {[[-8.5, -3.2], [-8.5, 3.2], [8.5, -3.2], [8.5, 3.2]].map(([lx, lz], i) => (
+        <mesh key={i} castShadow position={[lx, 6, lz]}>
+          <boxGeometry args={[2.4, 12, 2.4]} />
+          <meshStandardMaterial color="#efe7d4" roughness={0.82} />
+        </mesh>
+      ))}
+      <mesh castShadow position={[0, 12.7, 0]}>
+        <boxGeometry args={[21, 2.4, 8.6]} />
+        <meshStandardMaterial color="#f3ecdb" roughness={0.8} />
+      </mesh>
+      {[[-1, "#ce1126"], [0, "#fcd116"], [1, "#006b3f"]].map(([o, c]) => (
+        <mesh key={o} position={[0, 11.3, 4.35 + o * 0.001]}>
+          <boxGeometry args={[21, 0.42, 0.12]} />
+          <meshStandardMaterial color={c} />
+        </mesh>
+      ))}
+      <mesh position={[0, 12.8, 4.36]}>
+        <planeGeometry args={[17, 1.5]} />
+        <meshStandardMaterial map={inscription} />
+      </mesh>
+      <mesh position={[0, 14.1, 0]}>
+        <cylinderGeometry args={[2.5, 3.0, 0.7, 20]} />
+        <meshStandardMaterial color="#efe7d4" roughness={0.8} />
+      </mesh>
+      <mesh position={[0, 16.4, 0]} scale={[2.9, 2.9, 1]} geometry={star}>
+        <meshStandardMaterial color="#0c0c0c" roughness={0.45} metalness={0.15} />
+      </mesh>
+    </group>
+  );
+}
+
+// Curated landmark layout. Projecting the real GPS coordinates collapsed Osu's
+// landmarks onto the same start point (and dumped Oxford St 600 m off-route), so
+// instead we lay the set-pieces out at chosen lap fractions: spread around the
+// loop, each in its district, each on the driven road with a generous setback
+// and a cleared zone (clearM) where generic buildings are suppressed so the
+// landmark actually stands out instead of drowning in the roadside blocks.
+const LANDMARK_PLAN = [
+  { id: "danquah", frac: 0.05, side: 1, clearM: 30 }, // Osu roundabout, just past the line
+  { id: "akoadjei", frac: 0.145, side: 0, clearM: 24 }, // flyover, late on the long straight (spaced from the arch)
+  { id: "hospital", frac: 0.18, side: -1, clearM: 40 }, // 37 Military Hospital, the one open institutional straight
+  { id: "embassy", frac: 0.80, side: 1, clearM: 42 }, // diplomatic compound, Cantonments
+];
+
+// Snap a target distance to the straightest point within a window, so wide
+// set-pieces (long compound walls, the flyover deck) sit on a straight and
+// their ends never swing over the curving road.
+function snapToStraight(distance, length, window = 95, step = 4) {
+  let best = distance;
+  let bestCurv = Infinity;
+  for (let o = -window; o <= window; o += step) {
+    const d = (((distance + o) % length) + length) % length;
+    const c = Math.abs(getTrackFrame(d).curvature);
+    if (c < bestCurv) { bestCurv = c; best = d; }
+  }
+  return best;
+}
+
+function buildLandmarkPlan() {
+  const length = getTrackLength();
+  return LANDMARK_PLAN.map((l) => {
+    const raw = (((l.frac % 1) + 1) % 1) * length;
+    const distance = snapToStraight(raw, length);
+    const frame = getTrackFrame(distance);
+    const yaw = Math.atan2(frame.tangent.x, frame.tangent.z);
+    return { ...l, distance, frame, yaw };
+  });
+}
+
+// Position a set-piece beside its landmark site at the given setback (metres
+// beyond the rail). Returns the world position plus the yaw that faces the
+// model's front toward the street.
+function landmarkAnchor(item, setback) {
+  const s = item.side || 1;
+  const pos = item.frame.position.clone().addScaledVector(item.frame.normal, s * (TRACK.railOffset + setback));
+  return { pos: [pos.x, pos.y, pos.z], yaw: item.yaw, face: item.yaw + (s * Math.PI) / 2, side: s };
+}
+
+// True when `distance` is clear of every landmark's reserved zone — used by the
+// generic building/prop loops to leave room around the set-pieces.
+function clearOfLandmarks(distance, plan, length) {
+  for (const l of plan) {
+    const raw = (((distance - l.distance) % length) + length) % length;
+    if (Math.min(raw, length - raw) < l.clearM) return false;
+  }
+  return true;
+}
+
+function GhanaFlagPole({ position = [0, 0, 0], height = 8 }) {
+  const flagTex = useMemo(() => makeGhanaFlag(), []);
+  return (
+    <group position={position}>
+      <mesh position={[0, height / 2, 0]}>
+        <cylinderGeometry args={[0.1, 0.12, height, 6]} />
+        <meshStandardMaterial color="#dcdcdc" metalness={0.4} roughness={0.5} />
+      </mesh>
+      <mesh position={[1.3, height - 1.2, 0]}>
+        <planeGeometry args={[2.5, 1.7]} />
+        <meshStandardMaterial map={flagTex} side={THREE.DoubleSide} roughness={0.8} />
+      </mesh>
+    </group>
+  );
+}
+
+// Ako Adjei Interchange: the flyover near Danquah Circle (Ghana's first
+// interchange). A raised road deck on piers crosses over the racing road at an
+// angle, so you sweep underneath it — a strong, recognizable gateway.
+function AkoAdjeiFlyover({ item }) {
+  const sign = useMemo(() => makeSignTexture(["AKO ADJEI", "INTERCHANGE"], "#16314a", "#ffd54a"), []);
+  if (!item) return null;
+  const [px, py, pz] = [item.frame.position.x, item.frame.position.y, item.frame.position.z];
+  // The group is aligned to the road (local +X = across the road, local +Z =
+  // along it), so columns at local x = ±pierX sit a fixed distance OUTSIDE the
+  // rails no matter how the road curves — nothing solid ever lands on the road.
+  const deckY = 7.8;
+  const pierX = TRACK.railOffset + 4; // columns well clear of the rail
+  const cross = 0.5; // deck skews across the road so it reads as a crossing
+  const span = 36; // deck half-length, overhangs past the columns
+  return (
+    <group position={[px, py, pz]} rotation={[0, item.yaw, 0]}>
+      {/* support columns: two rows on each shoulder */}
+      {[-1, 1].map((sx) => (
+        [-5.5, 5.5].map((dz) => (
+          <mesh key={`${sx}-${dz}`} castShadow position={[sx * pierX, deckY / 2, dz]}>
+            <boxGeometry args={[2.4, deckY, 3]} />
+            <meshStandardMaterial color="#cfc7b6" roughness={0.9} />
+          </mesh>
+        ))
+      ))}
+      {/* the elevated deck crosses above the road (well over the car) at a skew */}
+      <group rotation={[0, cross, 0]}>
+        <mesh castShadow position={[0, deckY, 0]}>
+          <boxGeometry args={[span * 2, 1.2, 12]} />
+          <meshStandardMaterial color="#3a3f44" roughness={0.95} />
+        </mesh>
+        {[-1, 1].map((s) => (
+          <mesh key={s} position={[0, deckY + 0.9, s * 5.7]}>
+            <boxGeometry args={[span * 2, 0.9, 0.5]} />
+            <meshStandardMaterial color="#d9d2c2" roughness={0.85} />
+          </mesh>
+        ))}
+        {/* a couple of vehicles up on the flyover */}
+        {[-9, 8].map((x, i) => (
+          <mesh key={x} position={[x, deckY + 1.2, i ? 2 : -2]} rotation={[0, Math.PI / 2, 0]}>
+            <boxGeometry args={[2.1, 1.4, 4.6]} />
+            <meshStandardMaterial color={i ? "#c43b32" : "#e8e8e2"} roughness={0.5} metalness={0.1} />
+          </mesh>
+        ))}
+      </group>
+      {/* overhead name gantry facing oncoming traffic */}
+      <mesh position={[0, deckY + 3.1, -8]}>
+        <boxGeometry args={[13, 3, 0.3]} />
+        <meshStandardMaterial map={sign} emissive="#16314a" emissiveIntensity={0.3} />
+      </mesh>
+    </group>
+  );
+}
+
+// National Theatre of Ghana: the white modernist building whose roof reads as a
+// set of upswept sails. Backdrop set-piece (not on the racing line).
+function NationalTheatre({ position = [0, 0, 0], yaw = 0, scale = 1 }) {
+  return (
+    <group position={position} rotation={[0, yaw, 0]} scale={scale}>
+      <mesh castShadow position={[0, 4, 0]}>
+        <boxGeometry args={[34, 8, 22]} />
+        <meshStandardMaterial color="#f3f1ea" roughness={0.7} />
+      </mesh>
+      {/* three upswept white shells (quarter-cylinders tilted up) */}
+      {[[-9, 11, 0.5], [2, 14, -0.35], [12, 12, 0.5]].map(([x, h, tilt], i) => (
+        <mesh key={i} castShadow position={[x, 8 + h / 2, 0]} rotation={[tilt, 0, tilt * 0.4]}>
+          <cylinderGeometry args={[h * 0.62, h * 0.62, 20, 16, 1, false, 0, Math.PI]} />
+          <meshStandardMaterial color="#fbfaf5" roughness={0.5} metalness={0.05} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+      <mesh position={[0, 1.6, 11.2]}>
+        <boxGeometry args={[26, 3.2, 0.4]} />
+        <meshStandardMaterial color="#2a3340" roughness={0.4} metalness={0.3} />
+      </mesh>
+    </group>
+  );
+}
+
+// Kwame Nkrumah Mausoleum: the upward-tapering "sword into the sky" monument on
+// a stepped plinth, set in its memorial park. Backdrop set-piece.
+function NkrumahMausoleum({ position = [0, 0, 0], yaw = 0, scale = 1 }) {
+  const star = useMemo(() => makeStarGeometry(1, 0.42, 0.4), []);
+  return (
+    <group position={position} rotation={[0, yaw, 0]} scale={scale}>
+      {/* park lawn + stepped base */}
+      <mesh receiveShadow position={[0, 0.3, 0]}>
+        <cylinderGeometry args={[20, 21, 0.6, 8]} />
+        <meshStandardMaterial color="#6f8a55" roughness={1} />
+      </mesh>
+      {[[10, 0.9], [7.5, 1.8], [5, 2.7]].map(([r, y], i) => (
+        <mesh key={i} castShadow position={[0, y, 0]}>
+          <cylinderGeometry args={[r, r + 1.2, 1, 8]} />
+          <meshStandardMaterial color="#d8d2c2" roughness={0.9} />
+        </mesh>
+      ))}
+      {/* tapering shaft topped by a narrow point (sword) */}
+      <mesh castShadow position={[0, 11, 0]}>
+        <cylinderGeometry args={[0.5, 3.4, 16, 6]} />
+        <meshStandardMaterial color="#e9e3d4" roughness={0.8} />
+      </mesh>
+      <mesh castShadow position={[0, 20, 0]}>
+        <coneGeometry args={[0.5, 4, 6]} />
+        <meshStandardMaterial color="#e9e3d4" roughness={0.8} />
+      </mesh>
+      {/* fountains/pillars flanking */}
+      {[-1, 1].map((s) => (
+        <mesh key={s} castShadow position={[s * 13, 2.4, 6]}>
+          <cylinderGeometry args={[0.7, 0.9, 4.8, 6]} />
+          <meshStandardMaterial color="#e3ddcd" roughness={0.85} />
+        </mesh>
+      ))}
+      <mesh position={[0, 14, 1.9]} scale={[1.6, 1.6, 1]} geometry={star}>
+        <meshStandardMaterial color="#0c0c0c" roughness={0.5} metalness={0.2} />
+      </mesh>
+    </group>
+  );
+}
+
+// Skyline placement: stand a hero icon out in the open infield on a bearing
+// from the track centre, pushed outward until it's well clear of the road. It
+// then reads as a city monument across the interior of the loop — visible from
+// the far straights regardless of which way you're facing on the near side.
+function skylineSpot(angleDeg, radius) {
+  const a = (angleDeg * Math.PI) / 180;
+  let r = radius;
+  let pos = new THREE.Vector3(TRACK.center.x + Math.cos(a) * r, 0.2, TRACK.center.z + Math.sin(a) * r);
+  for (let k = 0; k < 40 && !isPointClearOfRoad(pos, TRACK.railOffset + 28, 600); k += 1) {
+    r += 14;
+    pos = new THREE.Vector3(TRACK.center.x + Math.cos(a) * r, 0.2, TRACK.center.z + Math.sin(a) * r);
+  }
+  const yaw = Math.atan2(TRACK.center.x - pos.x, TRACK.center.z - pos.z); // face the centre
+  return { position: [pos.x, pos.y, pos.z], yaw };
+}
+
+// Explicit skyline position (grid-verified to sit far from every road), facing
+// back toward the track centre.
+function fixedSkyline(x, z) {
+  return { position: [x, 0.2, z], yaw: Math.atan2(TRACK.center.x - x, TRACK.center.z - z) };
+}
+
+function CityLandmarks() {
+  const plan = useMemo(buildLandmarkPlan, []);
+  const byId = useMemo(() => Object.fromEntries(plan.map((p) => [p.id, p])), [plan]);
+  const spots = useMemo(() => ({
+    danquah: landmarkAnchor(byId.danquah, 11),
+    hospital: landmarkAnchor(byId.hospital, 16),
+    embassy: landmarkAnchor(byId.embassy, 16),
+  }), [byId]);
+  const hospitalSign = useMemo(() => makeSignTexture(["37 MILITARY HOSPITAL"], "#0a5a3c", "#ffffff", "#f4c430"), []);
+  const danquahSign = useMemo(() => makeSignTexture(["DANQUAH CIRCLE"], "#10243a", "#f4c430"), []);
+  const embassySign = useMemo(() => makeSignTexture(["EMBASSY"], "#16314a", "#ffffff"), []);
+  // hero skyline icons sit on big open ground (verified far from any road so
+  // their footprint can't touch the track) on a clean sightline from a straight
+  const theatre = useMemo(() => fixedSkyline(-640, -455), []);
+  const mausoleum = useMemo(() => skylineSpot(205, 130), []);
+
+  return (
+    <>
+      {/* 37 Military Hospital: long cream ward blocks + a tower, big red cross,
+          entrance gate, name board, ambulances and a flag, in its own compound */}
+      <group position={spots.hospital.pos} rotation={[0, spots.hospital.face, 0]}>
+        <GhanaFlagPole position={[12, 0, 8]} height={11} />
+        {/* perimeter wall + gate piers facing the street */}
+        <mesh position={[0, 1.2, 11]}>
+          <boxGeometry args={[26, 2.4, 0.5]} />
+          <meshStandardMaterial color="#e4dfd2" roughness={0.95} />
+        </mesh>
+        {[-3, 3].map((x) => (
+          <mesh key={x} castShadow position={[x, 1.7, 11]}>
+            <boxGeometry args={[1, 3.4, 1]} />
+            <meshStandardMaterial color="#d8d2c2" roughness={0.9} />
+          </mesh>
+        ))}
+        {/* main ward block */}
+        <mesh castShadow position={[0, 4, 0]}>
+          <boxGeometry args={[22, 8, 9]} />
+          <meshStandardMaterial color="#eef0ea" roughness={0.85} />
+        </mesh>
+        {/* floor banding so it reads as multi-storey */}
+        {[2.3, 5].map((y) => (
+          <mesh key={y} position={[0, y, 4.6]}>
+            <boxGeometry args={[22, 0.4, 0.3]} />
+            <meshStandardMaterial color="#cdd0c8" roughness={0.9} />
+          </mesh>
+        ))}
+        {/* taller ward tower with the red cross */}
+        <mesh castShadow position={[-7, 8, -1]}>
+          <boxGeometry args={[7, 16, 8]} />
+          <meshStandardMaterial color="#e6e8e2" roughness={0.85} />
+        </mesh>
+        <mesh castShadow position={[8, 6, -1]}>
+          <boxGeometry args={[7, 11, 8]} />
+          <meshStandardMaterial color="#e9ebe5" roughness={0.85} />
+        </mesh>
+        <mesh position={[-7, 12, 3.1]}>
+          <boxGeometry args={[3.4, 1.1, 0.4]} />
+          <meshBasicMaterial color="#d8202f" />
+        </mesh>
+        <mesh position={[-7, 12, 3.1]}>
+          <boxGeometry args={[1.1, 3.4, 0.4]} />
+          <meshBasicMaterial color="#d8202f" />
+        </mesh>
+        {/* name board over the gate */}
+        <mesh position={[0, 3.8, 11.4]}>
+          <boxGeometry args={[13, 2.2, 0.3]} />
+          <meshStandardMaterial map={hospitalSign} emissive="#0a5a3c" emissiveIntensity={0.28} />
+        </mesh>
+        {/* two ambulances in the forecourt */}
+        {[-4.5, 5].map((x, i) => (
+          <group key={x} position={[x, 0, 7]} rotation={[0, i ? 0.4 : -0.3, 0]}>
+            <mesh castShadow position={[0, 1.2, 0]}>
+              <boxGeometry args={[2.2, 2.1, 4.6]} />
+              <meshStandardMaterial color="#f4f4f0" roughness={0.5} />
+            </mesh>
+            <mesh position={[0, 1.2, 1.3]}>
+              <boxGeometry args={[2.22, 0.7, 0.7]} />
+              <meshBasicMaterial color="#d8202f" />
+            </mesh>
+            <mesh position={[0, 2.4, 0]}>
+              <boxGeometry args={[0.6, 0.4, 0.6]} />
+              <meshStandardMaterial color="#2f6fd0" emissive="#2f6fd0" emissiveIntensity={0.5} />
+            </mesh>
+          </group>
+        ))}
+      </group>
+
+      {/* Danquah Circle: planted roundabout island with the J.B. Danquah statue
+          on a plinth, ringed by kerb and shrubs, with a name board */}
+      <group position={spots.danquah.pos} rotation={[0, spots.danquah.face, 0]}>
+        <mesh receiveShadow position={[0, 0.25, 0]}>
+          <cylinderGeometry args={[9, 9.5, 0.5, 28]} />
+          <meshStandardMaterial color="#9aa37e" roughness={1} />
+        </mesh>
+        <mesh receiveShadow position={[0, 0.6, 0]}>
+          <cylinderGeometry args={[8, 8.4, 0.4, 28]} />
+          <meshStandardMaterial color="#b9b1a0" roughness={1} />
+        </mesh>
+        {Array.from({ length: 14 }).map((_, i) => {
+          const a = (i / 14) * Math.PI * 2;
+          return (
+            <mesh key={i} castShadow position={[Math.cos(a) * 7, 1.2, Math.sin(a) * 7]}>
+              <icosahedronGeometry args={[1, 0]} />
+              <meshStandardMaterial color={i % 2 ? "#2f7d3f" : "#266b36"} roughness={0.9} />
+            </mesh>
+          );
+        })}
+        <mesh castShadow position={[0, 1.4, 0]}>
+          <boxGeometry args={[3.6, 1.6, 3.6]} />
+          <meshStandardMaterial color="#d8d0bd" roughness={0.85} />
+        </mesh>
+        <mesh castShadow position={[0, 3.4, 0]}>
+          <boxGeometry args={[2.2, 2.8, 2.2]} />
+          <meshStandardMaterial color="#e8e2d4" roughness={0.8} />
+        </mesh>
+        {/* the statue: a standing bronze figure (head, torso, legs) */}
+        <mesh castShadow position={[0, 6.4, 0]}>
+          <cylinderGeometry args={[0.5, 0.62, 3, 8]} />
+          <meshStandardMaterial color="#5d5240" metalness={0.5} roughness={0.5} />
+        </mesh>
+        <mesh castShadow position={[0.55, 7, 0.2]} rotation={[0, 0, -0.5]}>
+          <cylinderGeometry args={[0.16, 0.16, 1.8, 6]} />
+          <meshStandardMaterial color="#5d5240" metalness={0.5} roughness={0.5} />
+        </mesh>
+        <mesh castShadow position={[0, 8.3, 0]}>
+          <sphereGeometry args={[0.48, 10, 8]} />
+          <meshStandardMaterial color="#5d5240" metalness={0.5} roughness={0.5} />
+        </mesh>
+        {/* name board on the kerb facing the road */}
+        <mesh position={[0, 2.2, 9]}>
+          <boxGeometry args={[8, 1.8, 0.3]} />
+          <meshStandardMaterial map={danquahSign} emissive="#10243a" emissiveIntensity={0.3} />
+        </mesh>
+      </group>
+
+      {/* Cantonments diplomatic compound: long perimeter wall, guarded gate,
+          a row of flags and low modern blocks set back behind the wall */}
+      <group position={spots.embassy.pos} rotation={[0, spots.embassy.face, 0]}>
+        {/* perimeter wall */}
+        <mesh castShadow position={[0, 1.6, 9]}>
+          <boxGeometry args={[42, 3.2, 0.6]} />
+          <meshStandardMaterial color="#e7e2d6" roughness={0.92} />
+        </mesh>
+        {/* gatehouse + barrier */}
+        <mesh castShadow position={[0, 1.6, 9]}>
+          <boxGeometry args={[6, 3.6, 3]} />
+          <meshStandardMaterial color="#dcd6c6" roughness={0.9} />
+        </mesh>
+        <mesh position={[3.6, 1.2, 9]} rotation={[0, 0, 0.2]}>
+          <boxGeometry args={[4, 0.25, 0.25]} />
+          <meshStandardMaterial color="#d8202f" roughness={0.6} />
+        </mesh>
+        {/* row of flags along the wall */}
+        {[-14, -7, 7, 14].map((x) => (
+          <GhanaFlagPole key={x} position={[x, 0, 7.5]} height={9} />
+        ))}
+        {/* low modern blocks + seal */}
+        <mesh castShadow position={[-9, 4, -1]}>
+          <boxGeometry args={[14, 8, 12]} />
+          <meshStandardMaterial color="#eceae2" roughness={0.7} />
+        </mesh>
+        <mesh castShadow position={[9, 3.2, 0]}>
+          <boxGeometry args={[13, 6.4, 12]} />
+          <meshStandardMaterial color="#dfe3e6" roughness={0.55} metalness={0.1} />
+        </mesh>
+        <mesh position={[-9, 8.4, 5.9]}>
+          <boxGeometry args={[14.2, 0.5, 12.2]} />
+          <meshStandardMaterial color="#5a6b76" roughness={0.6} />
+        </mesh>
+        <mesh position={[0, 5.2, 9.4]}>
+          <boxGeometry args={[6, 2, 0.2]} />
+          <meshStandardMaterial map={embassySign} emissive="#16314a" emissiveIntensity={0.25} />
+        </mesh>
+      </group>
+
+      {/* on-road flyover and distant city icons */}
+      <AkoAdjeiFlyover item={byId.akoadjei} />
+      <NationalTheatre position={theatre.position} yaw={theatre.yaw} scale={3.2} />
+      <NkrumahMausoleum position={mausoleum.position} yaw={mausoleum.yaw} scale={4.2} />
+    </>
+  );
 }
 
 function StartGantry({ countdownRef }) {
@@ -1036,10 +2232,28 @@ function createCurveMarkers() {
 
 /* ----------------------------------- car ----------------------------------- */
 
-const RaceCar = forwardRef(function RaceCar({ carState, color, headlights }, ref) {
+// Visual wheel placement per vehicle (the hover bike has none). Kept in sync with
+// the wheelbase feel set in vehicle.js so the contact patches roughly line up.
+const WHEEL_LAYOUT = {
+  street: { x: 0.88, fz: 1.32, rz: -1.32, r: 0.34 },
+  taxi: { x: 0.86, fz: 1.3, rz: -1.34, r: 0.35 },
+  trotro: { x: 0.96, fz: 1.72, rz: -1.78, r: 0.42 },
+};
+
+const RaceCar = forwardRef(function RaceCar({ carState, color, headlights, vehicle = "street" }, ref) {
   const paint = color || "#d81f33";
   // dark stripe on light paint, light stripe otherwise
   const stripe = ["#e8ecef", "#f5b818"].includes(paint) ? "#14181d" : "#f4f7fa";
+  const hover = vehicle === "hoverbike";
+  const wheels = WHEEL_LAYOUT[vehicle] || WHEEL_LAYOUT.street;
+  // Boost-jet placement and color: blue for the bike, orange exhaust for the rest.
+  const flameSpec = hover
+    ? { xs: [-0.13, 0.13], y: 0.04, z: -1.48, color: "#46b4ff" }
+    : vehicle === "trotro"
+      ? { xs: [-0.5, 0.5], y: 0.45, z: -2.85, color: "#ff9b2e" }
+      : vehicle === "taxi"
+        ? { xs: [-0.4, 0.4], y: 0.4, z: -2.35, color: "#ff9b2e" }
+        : { xs: [-0.36, 0.36], y: 0.4, z: -2.45, color: "#ff9b2e" };
   const bodyRef = useRef(null);
   const frontLeftSteer = useRef(null);
   const frontRightSteer = useRef(null);
@@ -1047,6 +2261,9 @@ const RaceCar = forwardRef(function RaceCar({ carState, color, headlights }, ref
   const tailMatRef = useRef(null);
   const flameLeft = useRef(null);
   const flameRight = useRef(null);
+  // red-hot inner cores for the bike's boost flare (blue jet + red core)
+  const coreLeft = useRef(null);
+  const coreRight = useRef(null);
   const boostLight = useRef(null);
   // headlight spotlight aims at this object, parked ahead of the nose in local
   // space so it sweeps with the car through corners
@@ -1064,197 +2281,69 @@ const RaceCar = forwardRef(function RaceCar({ carState, color, headlights }, ref
     if (frontLeftSteer.current) frontLeftSteer.current.rotation.y = steerAngle;
     if (frontRightSteer.current) frontRightSteer.current.rotation.y = steerAngle;
     if (bodyRef.current) {
-      bodyRef.current.rotation.z = THREE.MathUtils.clamp(-car.sideSpeed * 0.02 + car.steer * 0.03 * speedT, -0.12, 0.12);
-      bodyRef.current.rotation.x = THREE.MathUtils.clamp(car.brake * 0.035 * speedT - car.throttle * 0.018, -0.05, 0.06);
+      if (hover) {
+        // The bike has no suspension to hide behind, so it leans hard into corners
+        // and bobs on its cushion of air.
+        bodyRef.current.rotation.z = THREE.MathUtils.clamp(-car.sideSpeed * 0.045 + car.steer * 0.13 * speedT, -0.32, 0.32);
+        bodyRef.current.rotation.x = THREE.MathUtils.clamp(car.brake * 0.05 * speedT - car.throttle * 0.03, -0.09, 0.11);
+        bodyRef.current.position.y = Math.sin(car.timeMs * 0.004) * 0.06;
+      } else {
+        bodyRef.current.rotation.z = THREE.MathUtils.clamp(-car.sideSpeed * 0.02 + car.steer * 0.03 * speedT, -0.12, 0.12);
+        bodyRef.current.rotation.x = THREE.MathUtils.clamp(car.brake * 0.035 * speedT - car.throttle * 0.018, -0.05, 0.06);
+      }
     }
     if (tailMatRef.current) {
       const braking = car.brake > 0.2 || car.reversing;
       tailMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(tailMatRef.current.emissiveIntensity, braking ? 3.4 : 0.85, 1 - Math.exp(-dt * 14));
     }
     const boostK = car.boostTimer > 0 ? Math.min(1, car.boostTimer / 0.9) : 0;
-    const flicker = boostK > 0 ? 0.75 + Math.random() * 0.45 : 0;
-    for (const flame of [flameLeft.current, flameRight.current]) {
-      if (flame) flame.scale.set(boostK * flicker, boostK * flicker, boostK * (1 + Math.random() * 0.6));
+    const flicker = 0.75 + Math.random() * 0.45;
+    if (hover) {
+      // Blue thrust grows with speed; boost roughly doubles it and fires a red core.
+      const speedK = Math.min(1, Math.abs(car.forwardSpeed) / 26);
+      const blue = Math.max(0.18 + speedK * 0.7, boostK * 1.5);
+      for (const flame of [flameLeft.current, flameRight.current]) {
+        if (flame) flame.scale.set(blue * flicker, blue * flicker, blue * (1.1 + Math.random() * 0.7));
+      }
+      const red = boostK * (0.9 + Math.random() * 0.3);
+      for (const core of [coreLeft.current, coreRight.current]) {
+        if (core) core.scale.set(red, red, red * (1 + Math.random() * 0.5));
+      }
+      if (boostLight.current) boostLight.current.intensity = 1.6 + speedK * 1.5 + boostK * 6;
+    } else {
+      // The cars only flame on boost.
+      const k = boostK;
+      for (const flame of [flameLeft.current, flameRight.current]) {
+        if (flame) flame.scale.set(k * flicker, k * flicker, k * (1 + Math.random() * 0.6));
+      }
+      if (boostLight.current) boostLight.current.intensity = boostK * 5;
     }
-    if (boostLight.current) boostLight.current.intensity = boostK * 5;
   });
 
   return (
     <group ref={ref}>
       <group ref={bodyRef}>
-        {/* floor + lower body */}
-        <mesh castShadow position={[0, 0.32, 0]}>
-          <boxGeometry args={[1.86, 0.18, 4.15]} />
-          <meshStandardMaterial color="#15181c" roughness={0.6} />
-        </mesh>
-        <mesh castShadow position={[0, 0.58, -0.15]}>
-          <boxGeometry args={[1.94, 0.42, 3.4]} />
-          <meshStandardMaterial color={paint} roughness={0.28} metalness={0.4} />
-        </mesh>
-        {/* sloped nose */}
-        <mesh castShadow position={[0, 0.55, 1.72]} rotation={[0.1, 0, 0]}>
-          <boxGeometry args={[1.84, 0.34, 1.3]} />
-          <meshStandardMaterial color={paint} roughness={0.28} metalness={0.4} />
-        </mesh>
-        {/* hood intake */}
-        <mesh position={[0, 0.78, 1.05]}>
-          <boxGeometry args={[0.84, 0.07, 0.55]} />
-          <meshStandardMaterial color="#15181c" roughness={0.5} />
-        </mesh>
-        {/* windshield + cabin + roof */}
-        <mesh castShadow position={[0, 0.97, 0.62]} rotation={[-0.55, 0, 0]}>
-          <boxGeometry args={[1.5, 0.06, 0.95]} />
-          <meshStandardMaterial color="#0c1722" roughness={0.12} metalness={0.5} />
-        </mesh>
-        <mesh castShadow position={[0, 0.99, -0.35]}>
-          <boxGeometry args={[1.52, 0.5, 1.45]} />
-          <meshStandardMaterial color="#10151c" roughness={0.16} metalness={0.4} />
-        </mesh>
-        <mesh castShadow position={[0, 1.26, -0.35]}>
-          <boxGeometry args={[1.34, 0.07, 1.25]} />
-          <meshStandardMaterial color={paint} roughness={0.3} metalness={0.4} />
-        </mesh>
-        {/* rear deck + fastback slope */}
-        <mesh castShadow position={[0, 0.68, -1.75]}>
-          <boxGeometry args={[1.9, 0.34, 0.85]} />
-          <meshStandardMaterial color={paint} roughness={0.28} metalness={0.4} />
-        </mesh>
-        <mesh castShadow position={[0, 1.05, -1.18]} rotation={[-0.42, 0, 0]}>
-          <boxGeometry args={[1.46, 0.07, 0.85]} />
-          <meshStandardMaterial color="#0c1722" roughness={0.14} metalness={0.5} />
-        </mesh>
-        {/* racing stripes over nose, roof, and deck */}
-        {[-0.22, 0.22].map((x) => (
-          <mesh key={`stripe-nose-${x}`} position={[x, 0.745, 1.62]} rotation={[0.1, 0, 0]}>
-            <boxGeometry args={[0.17, 0.02, 1.34]} />
-            <meshStandardMaterial color={stripe} roughness={0.4} />
-          </mesh>
-        ))}
-        {[-0.22, 0.22].map((x) => (
-          <mesh key={`stripe-roof-${x}`} position={[x, 1.305, -0.35]}>
-            <boxGeometry args={[0.17, 0.02, 1.25]} />
-            <meshStandardMaterial color={stripe} roughness={0.4} />
-          </mesh>
-        ))}
-        {[-0.22, 0.22].map((x) => (
-          <mesh key={`stripe-deck-${x}`} position={[x, 0.86, -1.78]}>
-            <boxGeometry args={[0.17, 0.02, 0.8]} />
-            <meshStandardMaterial color={stripe} roughness={0.4} />
-          </mesh>
-        ))}
-        {/* side mirrors */}
-        {[-1.02, 1.02].map((x) => (
-          <group key={`mirror-${x}`} position={[x, 1.0, 0.42]}>
-            <mesh castShadow>
-              <boxGeometry args={[0.18, 0.1, 0.22]} />
-              <meshStandardMaterial color={paint} roughness={0.3} metalness={0.4} />
-            </mesh>
-            <mesh position={[Math.sign(x) * -0.04, 0, -0.06]}>
-              <boxGeometry args={[0.1, 0.07, 0.02]} />
-              <meshStandardMaterial color="#9fc2d8" roughness={0.1} metalness={0.7} />
-            </mesh>
-          </group>
-        ))}
-        {/* front grille */}
-        <mesh position={[0, 0.46, 2.3]}>
-          <boxGeometry args={[0.8, 0.18, 0.05]} />
-          <meshStandardMaterial color="#0a0d11" roughness={0.6} />
-        </mesh>
-        {/* wheel arch trims */}
-        {[-0.9, 0.9].map((x) =>
-          [1.32, -1.32].map((z) => (
-            <mesh key={`arch-${x}-${z}`} castShadow position={[x, 0.62, z]}>
-              <boxGeometry args={[0.14, 0.16, 1.0]} />
-              <meshStandardMaterial color="#15181c" roughness={0.5} />
-            </mesh>
-          )),
-        )}
-        {/* wing */}
-        {[-0.58, 0.58].map((x) => (
-          <mesh key={x} castShadow position={[x, 1.0, -1.98]}>
-            <boxGeometry args={[0.1, 0.34, 0.16]} />
-            <meshStandardMaterial color="#15181c" roughness={0.4} />
-          </mesh>
-        ))}
-        <mesh castShadow position={[0, 1.18, -2.02]}>
-          <boxGeometry args={[1.92, 0.07, 0.46]} />
-          <meshStandardMaterial color="#15181c" roughness={0.35} metalness={0.3} />
-        </mesh>
-        {/* wing endplates */}
-        {[-0.97, 0.97].map((x) => (
-          <mesh key={`endplate-${x}`} castShadow position={[x, 1.13, -2.02]}>
-            <boxGeometry args={[0.05, 0.3, 0.52]} />
-            <meshStandardMaterial color={paint} roughness={0.3} metalness={0.4} />
-          </mesh>
-        ))}
-        {/* shark fin */}
-        <mesh castShadow position={[0, 0.95, -1.45]}>
-          <boxGeometry args={[0.04, 0.22, 0.65]} />
-          <meshStandardMaterial color={paint} roughness={0.3} metalness={0.4} />
-        </mesh>
-        {/* front canards */}
-        {[-0.86, 0.86].map((x) => (
-          <mesh key={`canard-${x}`} castShadow position={[x, 0.42, 2.05]} rotation={[0.18, 0, x > 0 ? -0.22 : 0.22]}>
-            <boxGeometry args={[0.28, 0.03, 0.34]} />
-            <meshStandardMaterial color="#15181c" roughness={0.4} />
-          </mesh>
-        ))}
-        {/* splitter */}
-        <mesh position={[0, 0.28, 2.18]}>
-          <boxGeometry args={[1.9, 0.12, 0.34]} />
-          <meshStandardMaterial color="#15181c" roughness={0.5} />
-        </mesh>
-        {/* headlights */}
-        {[-0.62, 0.62].map((x) => (
-          <mesh key={x} position={[x, 0.62, 2.3]}>
-            <boxGeometry args={[0.42, 0.13, 0.06]} />
-            <meshStandardMaterial color="#fff6d8" emissive="#ffefb0" emissiveIntensity={headlights ? 2.8 : 1.4} />
-          </mesh>
-        ))}
-        {/* tail light strip */}
-        <mesh position={[0, 0.72, -2.2]}>
-          <boxGeometry args={[1.62, 0.13, 0.06]} />
-          <meshStandardMaterial ref={tailMatRef} color="#3d090d" emissive="#ff1626" emissiveIntensity={0.85} />
-        </mesh>
-        {/* side mirrors on the A-pillars */}
-        {[-1, 1].map((s) => (
-          <group key={`mirror-${s}`} position={[s * 0.96, 0.92, 0.7]}>
-            <mesh castShadow position={[s * 0.08, 0, 0]} rotation={[0, 0, s * -0.2]}>
-              <boxGeometry args={[0.2, 0.11, 0.13]} />
-              <meshStandardMaterial color={paint} roughness={0.3} metalness={0.4} />
-            </mesh>
-            <mesh position={[s * 0.17, 0, 0.02]} rotation={[0, s * 0.5, 0]}>
-              <boxGeometry args={[0.02, 0.08, 0.1]} />
-              <meshStandardMaterial color="#9fc2d8" roughness={0.1} metalness={0.7} />
-            </mesh>
-          </group>
-        ))}
-        {/* exhausts */}
-        {[-0.36, 0.36].map((x) => (
-          <mesh key={x} position={[x, 0.4, -2.16]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.09, 0.09, 0.22, 10]} />
-            <meshStandardMaterial color="#43494e" metalness={0.8} roughness={0.3} />
-          </mesh>
-        ))}
-        {/* number roundel */}
-        <mesh position={[0, 0.81, -0.35]} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
-          <circleGeometry args={[0.4, 20]} />
-          <meshBasicMaterial color="#ffffff" />
-        </mesh>
+        <Suspense fallback={null}>
+          <GLBVehicle vehicle={vehicle} paint={paint} />
+        </Suspense>
       </group>
-      {/* boost flames live outside the rolling body so they stay behind the bumper */}
-      {[
-        [-0.36, flameLeft],
-        [0.36, flameRight],
-      ].map(([x, flameRef]) => (
-        <group key={x} position={[x, 0.4, -2.45]}>
-          <mesh ref={flameRef} rotation={[-Math.PI / 2, 0, 0]} scale={[0, 0, 0]}>
+      {/* boost flames live outside the rolling body so they stay behind the bumper.
+          The bike adds a red-hot inner core that only shows under boost. */}
+      {flameSpec.xs.map((x, i) => (
+        <group key={x} position={[x, flameSpec.y, flameSpec.z]}>
+          <mesh ref={i === 0 ? flameLeft : flameRight} rotation={[-Math.PI / 2, 0, 0]} scale={[0, 0, 0]}>
             <coneGeometry args={[0.17, 1.1, 8]} />
-            <meshBasicMaterial color="#ff9b2e" transparent opacity={0.9} blending={THREE.AdditiveBlending} depthWrite={false} />
+            <meshBasicMaterial color={flameSpec.color} transparent opacity={0.9} blending={THREE.AdditiveBlending} depthWrite={false} />
           </mesh>
+          {hover && (
+            <mesh ref={i === 0 ? coreLeft : coreRight} rotation={[-Math.PI / 2, 0, 0]} scale={[0, 0, 0]}>
+              <coneGeometry args={[0.12, 1.0, 8]} />
+              <meshBasicMaterial color="#ff5630" transparent opacity={0.95} blending={THREE.AdditiveBlending} depthWrite={false} />
+            </mesh>
+          )}
         </group>
       ))}
-      <pointLight ref={boostLight} position={[0, 0.7, -2.7]} color="#ff8c3a" intensity={0} distance={9} />
+      <pointLight ref={boostLight} position={[0, 0.7, flameSpec.z - 0.25]} color={flameSpec.color} intensity={0} distance={9} />
       {headlights && (
         <>
           {/* the beam that actually lights the road ahead */}
@@ -1278,39 +2367,35 @@ const RaceCar = forwardRef(function RaceCar({ carState, color, headlights }, ref
           ))}
         </>
       )}
-      {/* wheels */}
-      <Wheel x={-0.88} z={1.32} steerRef={frontLeftSteer} spinRefs={spinRefs} index={0} />
-      <Wheel x={0.88} z={1.32} steerRef={frontRightSteer} spinRefs={spinRefs} index={1} />
-      <Wheel x={-0.88} z={-1.32} spinRefs={spinRefs} index={2} />
-      <Wheel x={0.88} z={-1.32} spinRefs={spinRefs} index={3} />
     </group>
   );
 });
 
-function Wheel({ x, z, steerRef, spinRefs, index }) {
+function Wheel({ x, z, r = 0.34, steerRef, spinRefs, index }) {
   return (
-    <group position={[x, 0.34, z]} ref={steerRef}>
+    <group position={[x, r, z]} ref={steerRef}>
       <group
         ref={(node) => {
           spinRefs.current[index] = node;
         }}
       >
         <mesh castShadow rotation={[0, 0, Math.PI / 2]}>
-          <cylinderGeometry args={[0.34, 0.34, 0.3, 16]} />
+          <cylinderGeometry args={[r, r, 0.3, 16]} />
           <meshStandardMaterial color="#0b0d10" roughness={0.7} />
         </mesh>
         <mesh rotation={[0, 0, Math.PI / 2]}>
-          <cylinderGeometry args={[0.19, 0.19, 0.32, 12]} />
+          <cylinderGeometry args={[r * 0.56, r * 0.56, 0.32, 12]} />
           <meshStandardMaterial color="#aab3bc" metalness={0.7} roughness={0.3} />
         </mesh>
         <mesh>
-          <boxGeometry args={[0.34, 0.1, 0.3]} />
+          <boxGeometry args={[r, 0.1, 0.3]} />
           <meshStandardMaterial color="#5b646d" metalness={0.6} roughness={0.35} />
         </mesh>
       </group>
     </group>
   );
 }
+
 
 /* -------------------------------- particles -------------------------------- */
 

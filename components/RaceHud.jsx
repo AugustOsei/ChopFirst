@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MINIMAP } from "../game/track";
+import { MINIMAP, TRACK } from "../game/track";
 
 const GAUGE_MAX_KMH = 240;
 const GAUGE_SWEEP_DEG = 264;
@@ -59,7 +59,7 @@ export default function RaceHud({ race, driver, muted, onToggleMute, onPause }) 
       <div className="hud-top">
         <div className="hud-chip lap-chip">
           <small>LAP</small>
-          <b>{Math.min(3, race.lap + 1)}<i>/3</i></b>
+          <b>{Math.min(TRACK.laps, race.lap + 1)}<i>/{TRACK.laps}</i></b>
         </div>
         <div className="hud-chip time-chip">
           <small>TIME</small>

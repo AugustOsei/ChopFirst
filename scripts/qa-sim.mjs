@@ -1,4 +1,4 @@
-import { createVehicleState, updateVehicle } from "./vehicle.js";
+import { createVehicleState, updateVehicle, listVehicles } from "./vehicle.js";
 
 const DT = 1 / 60;
 const IDLE = { left: false, right: false, gas: false, brake: false, handbrake: false, boost: false };
@@ -11,8 +11,8 @@ function run(car, input, seconds, onTick) {
   }
 }
 
-function fresh() {
-  return createVehicleState();
+function fresh(vehicle) {
+  return createVehicleState(vehicle);
 }
 
 const results = {};
@@ -181,6 +181,68 @@ const results = {};
     driftPct: ((driftFrames / frames) * 100).toFixed(1) + "%",
     endKmh: Math.round(car.forwardSpeed * 3.6),
   };
+}
+
+// 9. Per-vehicle sanity: every selectable car must build speed, turn at low speed,
+// stop, boost above its cruise cap, and complete a lap with the bang-bang driver.
+// Numbers here are the calibration reference for per-car medal targets.
+{
+  results.perVehicle = {};
+  for (const { id, name } of listVehicles()) {
+    // top speed (flat-out until it would hit a bend)
+    const sp = fresh(id);
+    let maxSpeed = 0;
+    run(sp, { gas: true }, 6, (c) => {
+      maxSpeed = Math.max(maxSpeed, c.forwardSpeed);
+    });
+    // boost peak measured before the first bend so it reads true overdrive gain
+    const bp = fresh(id);
+    run(bp, { gas: true }, 2.6);
+    const preBoost = bp.forwardSpeed;
+    let boostPeak = 0;
+    run(bp, { gas: true, boost: true }, 2, (c) => {
+      boostPeak = Math.max(boostPeak, c.forwardSpeed);
+    });
+
+    // low-speed rotation from rest
+    const lt = fresh(id);
+    const yaw0 = lt.yaw;
+    run(lt, { gas: true, right: true }, 1);
+
+    // braking distance from ~3s of gas
+    const bk = fresh(id);
+    run(bk, { gas: true }, 3);
+    let stopTime = null;
+    run(bk, { brake: true }, 5, (c, t) => {
+      if (stopTime === null && Math.abs(c.forwardSpeed) < 0.5) stopTime = t;
+    });
+
+    // full lap with the bang-bang keyboard player
+    const car = fresh(id);
+    let railFrames = 0;
+    let frames = 0;
+    let lapTime = null;
+    for (let i = 0; i < 60 * 120 && lapTime === null; i += 1) {
+      const target = -0.08 * car.lateral;
+      const u = car.headingError - target;
+      updateVehicle(car, { ...IDLE, gas: true, left: u > 0.04, right: u < -0.04 }, DT);
+      frames += 1;
+      if (car.railContact) railFrames += 1;
+      if (car.lap >= 1) lapTime = (frames * DT).toFixed(1);
+    }
+
+    results.perVehicle[id] = {
+      name,
+      cruiseKmh: Math.round(maxSpeed * 3.6),
+      boostPeakKmh: Math.round(boostPeak * 3.6),
+      boostGain: boostPeak > preBoost + 2,
+      lowSpeedTurns: Math.abs(lt.yaw - yaw0) > 0.25,
+      stopsInSeconds: stopTime?.toFixed(2) ?? ">5",
+      lapCompleted: lapTime !== null,
+      lapTimeSeconds: lapTime ?? "did not finish in 120s",
+      railContactPct: ((railFrames / frames) * 100).toFixed(1) + "%",
+    };
+  }
 }
 
 console.log(JSON.stringify(results, null, 2));

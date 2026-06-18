@@ -6,21 +6,127 @@ import { getTrackFrame, getTrackLength, PICKUPS, TRACK, pointAt, projectPointToT
 // For the chase camera (looking along +forward, +Y up) screen-right is -X, so the
 // RIGHT key must map to NEGATIVE steer. steer > 0 therefore means "turn screen-left";
 // all downstream signs (assist, visuals) follow this convention consistently.
-const MAX_SPEED = 52;
-const BOOST_MAX_SPEED = 64;
-const MAX_REVERSE_SPEED = 11;
-const ENGINE_ACCEL = 27;
-const BOOST_ACCEL = 24;
-const BRAKE_DECEL = 44;
-const REVERSE_ACCEL = 13;
-const ROLLING_DRAG = 1.5;
-const QUAD_DRAG = 0.0085;
-const WHEELBASE = 2.6;
-const MAX_STEER_LOCK = 0.62;
-const MAX_YAW_RATE = 2.6;
-const GRIP = 8.4; // lateral-slip damping per second with full traction
-const DRIFT_GRIP = 2.8;
-const LOW_SPEED_GRIP_BONUS = 6; // extra grip below ~9 m/s so the car never ice-skates at parking speed
+// --- Per-vehicle handling. Everything that defines how a car *feels* lives in a
+// tuning table keyed by vehicle id; createVehicleState attaches the chosen set to
+// car.tuning and updateVehicle reads from it. The "street" coupe keeps the exact
+// numbers the game shipped with, so its medal calibration and ghosts are untouched.
+// Field notes:
+//   GRIP                lateral-slip damping per second with full traction
+//   LOW_SPEED_GRIP_BONUS extra grip below ~9 m/s so the car never ice-skates at parking speed
+//   RIDE_HEIGHT         chassis origin above the road (raised for the floating bike)
+const STREET_TUNING = {
+  MAX_SPEED: 52,
+  BOOST_MAX_SPEED: 64,
+  MAX_REVERSE_SPEED: 11,
+  ENGINE_ACCEL: 27,
+  BOOST_ACCEL: 24,
+  BRAKE_DECEL: 44,
+  REVERSE_ACCEL: 13,
+  ROLLING_DRAG: 1.5,
+  QUAD_DRAG: 0.0085,
+  WHEELBASE: 2.6,
+  MAX_STEER_LOCK: 0.62,
+  MAX_YAW_RATE: 2.6,
+  GRIP: 8.4,
+  DRIFT_GRIP: 2.8,
+  LOW_SPEED_GRIP_BONUS: 6,
+  RIDE_HEIGHT: 0.82,
+};
+
+// Ghana taxi: a touch slower than the coupe but eager to rotate and very planted —
+// short wheelbase, extra lock, high grip. Rewards tidy, momentum-keeping lines.
+const TAXI_TUNING = {
+  ...STREET_TUNING,
+  MAX_SPEED: 46,
+  BOOST_MAX_SPEED: 57,
+  ENGINE_ACCEL: 25,
+  BRAKE_DECEL: 42,
+  WHEELBASE: 2.45,
+  MAX_STEER_LOCK: 0.66,
+  MAX_YAW_RATE: 2.75,
+  GRIP: 9.0,
+  DRIFT_GRIP: 3.0,
+};
+
+// Trotro: a heavy minibus. Slow to wind up, slow to stop, long wheelbase and a
+// capped yaw rate so it understeers and wallows. The handful that masters it earns it.
+const TROTRO_TUNING = {
+  ...STREET_TUNING,
+  MAX_SPEED: 40,
+  BOOST_MAX_SPEED: 50,
+  MAX_REVERSE_SPEED: 9,
+  ENGINE_ACCEL: 18,
+  BOOST_ACCEL: 18,
+  BRAKE_DECEL: 36,
+  REVERSE_ACCEL: 10,
+  ROLLING_DRAG: 2.0,
+  QUAD_DRAG: 0.011,
+  WHEELBASE: 3.25,
+  MAX_STEER_LOCK: 0.54,
+  MAX_YAW_RATE: 2.1,
+  GRIP: 7.2,
+  DRIFT_GRIP: 2.4,
+};
+
+// Hover bike: fastest and twitchiest. No tyres, so it floats high and turns on a
+// dime — high lock and yaw rate, glued lateral grip, light drag. Easy to overcook.
+const HOVERBIKE_TUNING = {
+  ...STREET_TUNING,
+  MAX_SPEED: 58,
+  BOOST_MAX_SPEED: 72,
+  ENGINE_ACCEL: 31,
+  BOOST_ACCEL: 27,
+  BRAKE_DECEL: 46,
+  ROLLING_DRAG: 1.2,
+  QUAD_DRAG: 0.0075,
+  WHEELBASE: 2.2,
+  MAX_STEER_LOCK: 0.7,
+  MAX_YAW_RATE: 3.0,
+  GRIP: 9.6,
+  DRIFT_GRIP: 3.2,
+  RIDE_HEIGHT: 1.3,
+};
+
+// Registry: single source of truth shared by the picker UI (listVehicles) and the
+// physics (VEHICLE_TUNING). Mirrors the TRACK_DEFS pattern in track.js.
+export const VEHICLES = [
+  { id: "street", name: "Street Coupe", klass: "All-rounder", blurb: "Balanced all-rounder — the original.", tuning: STREET_TUNING },
+  { id: "taxi", name: "Ghana Taxi", klass: "Nimble", blurb: "Nimble and planted, loves tidy lines.", tuning: TAXI_TUNING },
+  { id: "trotro", name: "Trotro", klass: "Heavyweight", blurb: "Heavy minibus — slow but unstoppable.", tuning: TROTRO_TUNING },
+  { id: "hoverbike", name: "Hover Bike", klass: "Hyperspeed", blurb: "Fastest and twitchiest — floats on blue flame.", tuning: HOVERBIKE_TUNING },
+];
+export const DEFAULT_VEHICLE = "street";
+const VEHICLE_TUNING = Object.fromEntries(VEHICLES.map((v) => [v.id, v.tuning]));
+
+export function listVehicles() {
+  return VEHICLES.map(({ id, name, klass, blurb }) => ({ id, name, klass, blurb }));
+}
+
+// Display specs for the garage UI, derived from the real tuning so they never drift.
+// Each bar is 0–100, normalized across the roster with a floor so even the slowest
+// car shows a readable bar; topSpeedKmh is the headline number (m/s → km/h).
+function bar(value, min, max, floor = 28) {
+  const t = Math.max(0, Math.min(1, (value - min) / (max - min)));
+  return Math.round(floor + t * (100 - floor));
+}
+export function vehicleStats(id) {
+  const v = VEHICLES.find((x) => x.id === id) || VEHICLES[0];
+  const t = v.tuning;
+  return {
+    id: v.id,
+    name: v.name,
+    klass: v.klass,
+    blurb: v.blurb,
+    topSpeedKmh: Math.round(t.BOOST_MAX_SPEED * 3.6),
+    bars: {
+      speed: bar(t.MAX_SPEED, 38, 58),
+      accel: bar(t.ENGINE_ACCEL, 16, 31),
+      grip: bar(t.GRIP, 7, 9.6),
+      agility: bar(t.MAX_YAW_RATE, 2.0, 3.0),
+    },
+  };
+}
+
 const BOOST_DURATION = 1.5;
 const BOOST_COOLDOWN = 2.2;
 // Coin economy: coins respawn every lap; every COINS_PER_BOOST collected banks
@@ -30,14 +136,16 @@ export const MAX_BOOST_CHARGES = 5;
 const RAIL_RESTITUTION = 0.14;
 const CAR_HALF_WIDTH = 1.1;
 const RAIL_LIMIT = TRACK.railOffset - CAR_HALF_WIDTH - 0.2;
-const RIDE_HEIGHT = 0.82;
 
-export function createVehicleState() {
+export function createVehicleState(vehicleId = DEFAULT_VEHICLE) {
+  const tuning = VEHICLE_TUNING[vehicleId] || VEHICLE_TUNING[DEFAULT_VEHICLE];
   const startDistance = wrapDistance(TRACK.startDistance - 10);
   const startFrame = getTrackFrame(startDistance);
   const position = pointAt(startDistance, 0);
-  position.y += RIDE_HEIGHT;
+  position.y += tuning.RIDE_HEIGHT;
   return {
+    tuning,
+    vehicle: vehicleId in VEHICLE_TUNING ? vehicleId : DEFAULT_VEHICLE,
     position,
     yaw: Math.atan2(startFrame.tangent.x, startFrame.tangent.z),
     velocity: new THREE.Vector3(),
@@ -75,6 +183,24 @@ export function createVehicleState() {
 
 export function updateVehicle(car, input, dt) {
   const trackLength = getTrackLength();
+  const {
+    MAX_SPEED,
+    BOOST_MAX_SPEED,
+    MAX_REVERSE_SPEED,
+    ENGINE_ACCEL,
+    BOOST_ACCEL,
+    BRAKE_DECEL,
+    REVERSE_ACCEL,
+    ROLLING_DRAG,
+    QUAD_DRAG,
+    WHEELBASE,
+    MAX_STEER_LOCK,
+    MAX_YAW_RATE,
+    GRIP,
+    DRIFT_GRIP,
+    LOW_SPEED_GRIP_BONUS,
+    RIDE_HEIGHT,
+  } = car.tuning || VEHICLE_TUNING[DEFAULT_VEHICLE];
 
   // left = +steer (+yaw, toward +X); right = -steer. See yaw convention above.
   const steerTarget = (input.left ? 1 : 0) - (input.right ? 1 : 0);
@@ -82,7 +208,7 @@ export function updateVehicle(car, input, dt) {
   // Wind-on is deliberately gentle so a tap eases into the turn instead of
   // snapping the wheels over; the max lock below is unchanged, so tight corners
   // are just as takeable — they just take a beat longer to load up.
-  const steerRate = steerTarget === 0 ? 10 : 5;
+  const steerRate = steerTarget === 0 ? 10 : 3.3;
   car.steer += (steerTarget - car.steer) * (1 - Math.exp(-dt * steerRate));
   car.throttle += ((input.gas ? 1 : 0) - car.throttle) * (1 - Math.exp(-dt * 8));
   car.brake += ((input.brake ? 1 : 0) - car.brake) * (1 - Math.exp(-dt * 10));
