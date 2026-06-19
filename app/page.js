@@ -496,6 +496,22 @@ export default function Home() {
 
             </div>
             <div className="g-right">
+            <div className="identity-card">
+              <span className="section-label">Your driver</span>
+              <div className="identity-row">
+                <label className="photo-pick">
+                  {driver.photo
+                    ? <img src={driver.photo} alt="Your profile" />
+                    : <span className="photo-empty">＋<i>Photo</i></span>}
+                  <input type="file" accept="image/*" onChange={handlePhoto} />
+                </label>
+                <label className="field name-field">
+                  Racing name
+                  <input value={driver.name} onChange={(event) => setDriver({ ...driver, name: event.target.value })} placeholder="Your racing name" />
+                </label>
+              </div>
+            </div>
+
             <div className="track-select">
               <span className="section-label">Circuit</span>
               <div className="track-cards">
@@ -521,19 +537,6 @@ export default function Home() {
                 ))}
               </div>
             </div>
-
-            <details className="identity">
-              <summary>Driver name &amp; photo</summary>
-              <label className="field">
-                Driver name
-                <input value={driver.name} onChange={(event) => setDriver({ ...driver, name: event.target.value })} placeholder="Your racing name" />
-              </label>
-              <label className="photo-field">
-                <span>{driver.photo ? "Change profile photo" : "Upload profile photo"}</span>
-                <input type="file" accept="image/*" onChange={handlePhoto} />
-                {driver.photo && <img src={driver.photo} alt="" />}
-              </label>
-            </details>
 
             </div>
             </div>
@@ -624,19 +627,37 @@ function MedalVerdict({ timeMs }) {
 }
 
 function GlobalBoard({ onClose }) {
+  const [boardTrack, setBoardTrack] = useState(TRACK_LIST[0].id);
   const [board, setBoard] = useState(null);
   useEffect(() => {
-    fetch("/api/leaderboard")
+    let live = true;
+    setBoard(null);
+    fetch(`/api/leaderboard?track=${encodeURIComponent(boardTrack)}`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setBoard(data || { top: [], totalRuns: 0, totalPlayers: 0 }))
-      .catch(() => setBoard({ top: [], totalRuns: 0, totalPlayers: 0 }));
-  }, []);
+      .then((data) => live && setBoard(data || { top: [], totalRuns: 0, totalPlayers: 0 }))
+      .catch(() => live && setBoard({ top: [], totalRuns: 0, totalPlayers: 0 }));
+    return () => { live = false; };
+  }, [boardTrack]);
   return (
     <div className="guide-overlay" onClick={onClose}>
       <div className="guide-card" onClick={(event) => event.stopPropagation()}>
         <button className="guide-close" aria-label="Close leaderboard" onClick={onClose}>×</button>
         <p className="eyebrow">All-time</p>
         <h2 className="guide-title">Global leaderboard</h2>
+        {TRACK_LIST.length > 1 && (
+          <div className="board-tabs">
+            {TRACK_LIST.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={`board-tab${boardTrack === t.id ? " active" : ""}`}
+                onClick={() => setBoardTrack(t.id)}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+        )}
         {!board ? (
           <p className="guide-lede">Loading…</p>
         ) : (
@@ -665,40 +686,79 @@ function GlobalBoard({ onClose }) {
   );
 }
 
-function ChallengeInbox() {
+// Each tracked challenge is one head-to-head "rivalry": your time vs the current
+// leader's. Shared by the title-screen teaser and the full Rivals board — both
+// run on data we already store (chopfirst.challenges) and serve, no accounts.
+function useRivals() {
   const [items, setItems] = useState(null);
   useEffect(() => {
-    const tracked = loadTracked().slice(0, 3);
-    if (!tracked.length) return;
+    const tracked = loadTracked();
+    if (!tracked.length) {
+      setItems([]);
+      return;
+    }
+    let live = true;
     Promise.all(
       tracked.map(async (entry) => {
         try {
           const res = await fetch(`/api/challenges/${entry.id}`);
           if (!res.ok) return null;
           const data = await res.json();
-          const leader = data.runs[0];
+          const leader = data.runs?.[0];
           if (!leader) return null;
+          const hoursLeft = data.expiresAt ? (new Date(data.expiresAt).getTime() - Date.now()) / 3600000 : null;
           return {
             id: entry.id,
             leader,
             myTimeMs: entry.myTimeMs,
-            newRuns: Math.max(0, data.runs.length - (entry.lastSeenRuns || 0)),
+            runnerUpMs: data.runs[1]?.timeMs ?? null,
             chopped: entry.myTimeMs != null && leader.timeMs < entry.myTimeMs,
+            newRuns: Math.max(0, data.runs.length - (entry.lastSeenRuns || 0)),
             runCount: data.runs.length,
             expired: data.expired,
+            hoursLeft,
+            trackName: TRACK_LIST.find((t) => t.id === (data.trackId || TRACK_LIST[0].id))?.name || "",
           };
         } catch {
           return null;
         }
       }),
-    ).then((results) => setItems(results.filter(Boolean)));
+    ).then((results) => {
+      if (live) setItems(results.filter(Boolean).sort((a, b) => rivalPriority(a) - rivalPriority(b) || (a.hoursLeft ?? 99) - (b.hoursLeft ?? 99)));
+    });
+    return () => {
+      live = false;
+    };
   }, []);
+  // The badge counts only rivalries that want a response: you've been chopped,
+  // or a friend posted a new run since you last looked (and it's still live).
+  const pendingCount = (items || []).filter((it) => !it.expired && (it.chopped || it.newRuns > 0)).length;
+  return { items, pendingCount };
+}
 
+// Lower number = more urgent = higher on the board.
+function rivalPriority(it) {
+  if (it.expired) return 5;
+  if (it.chopped) return 0;
+  if (it.newRuns > 0) return 1;
+  if (it.hoursLeft != null && it.hoursLeft < 6) return 2;
+  return 3;
+}
+
+function rivalState(it) {
+  if (it.expired) return "dormant";
+  if (it.chopped) return "chopped";
+  if (it.hoursLeft != null && it.hoursLeft < 6) return "expiring";
+  return "leading";
+}
+
+// Condensed teaser on the hero — top 3 rivalries plus a link into the full board.
+function ChallengeInbox({ items, onSeeAll }) {
   if (!items?.length) return null;
   return (
     <div className="challenge-inbox title-fade" style={{ animationDelay: ".95s" }}>
-      <small>Your challenges</small>
-      {items.map((item) => (
+      <small>Your rivals</small>
+      {items.slice(0, 3).map((item) => (
         <a key={item.id} className={`inbox-row${item.expired ? " dormant" : ""}`} href={`/?challenge=${item.id}`}>
           <span className={`inbox-dot${item.newRuns > 0 ? " live" : ""}${item.chopped ? " chopped" : ""}`} />
           <span className="inbox-text">
@@ -710,6 +770,54 @@ function ChallengeInbox() {
           <span className="inbox-meta">{item.expired ? "↻ revive" : `${item.runCount} run${item.runCount === 1 ? "" : "s"}`}</span>
         </a>
       ))}
+      {items.length > 3 && (
+        <button type="button" className="inbox-seeall" onClick={onSeeAll}>See all {items.length} rivals →</button>
+      )}
+    </div>
+  );
+}
+
+// Full Rivals board: every active duel, sorted by who needs an answer first.
+function RivalsBoard({ items, onClose }) {
+  return (
+    <div className="guide-overlay" onClick={onClose}>
+      <div className="guide-card" onClick={(event) => event.stopPropagation()}>
+        <button className="guide-close" aria-label="Close rivals" onClick={onClose}>×</button>
+        <p className="eyebrow">Head to head</p>
+        <h2 className="guide-title">Your rivals</h2>
+        {!items ? (
+          <p className="guide-lede">Loading…</p>
+        ) : items.length === 0 ? (
+          <p className="guide-lede">No rivalries yet — set a time and send the link to start one.</p>
+        ) : (
+          <ol className="rivals-list">
+            {items.map((it) => {
+              const state = rivalState(it);
+              const margin = !it.chopped && it.runnerUpMs != null ? it.runnerUpMs - it.leader.timeMs : null;
+              const meta = [
+                it.trackName,
+                it.newRuns > 0 ? `${it.newRuns} new run${it.newRuns > 1 ? "s" : ""}` : null,
+                it.expired ? "dormant" : it.hoursLeft != null && it.hoursLeft < 6 ? `${Math.max(1, Math.round(it.hoursLeft))}h left` : `${it.runCount} run${it.runCount === 1 ? "" : "s"}`,
+              ].filter(Boolean).join(" · ");
+              return (
+                <li key={it.id} className={`rival-row ${state}`}>
+                  <a href={`/?challenge=${it.id}`}>
+                    <span className={`rival-dot ${state}`} />
+                    <span className="rival-main">
+                      <strong>{it.chopped ? `${it.leader.name} leads` : "You lead"}</strong>
+                      <small>{meta}</small>
+                    </span>
+                    <span className={`rival-gap ${it.chopped ? "down" : "up"}`}>
+                      {it.chopped ? `−${formatGap(it.myTimeMs - it.leader.timeMs)}` : margin != null ? `+${formatGap(margin)}` : "1st"}
+                    </span>
+                    <span className="rival-cta">{it.expired ? "Revive" : it.chopped ? "Your move" : "Defend"} →</span>
+                  </a>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </div>
     </div>
   );
 }
@@ -819,6 +927,8 @@ function FeatureRow({ flip, eyebrow, title, body, media, foot }) {
 
 function LandingPage({ challenge, onStart, onGuide, onBoard, onFeedback, onChangelog, changelogSeen, overlayOpen }) {
   const [bestTime, setBestTime] = useState(null);
+  const [showRivals, setShowRivals] = useState(false);
+  const { items: rivals, pendingCount } = useRivals();
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(pbKey()) || "null");
@@ -841,6 +951,9 @@ function LandingPage({ challenge, onStart, onGuide, onBoard, onFeedback, onChang
       <header className="landing-nav">
         <span className="nav-mark">CHOP<i>FIRST</i></span>
         <div className="nav-links">
+          <button className="rivals-link" onClick={() => setShowRivals(true)}>
+            Rivals{pendingCount > 0 && <span className="rivals-badge">{pendingCount}</span>}
+          </button>
           <button onClick={onBoard}>Leaderboard</button>
           <button onClick={onGuide}>How to play</button>
           <button className="nav-cta" onClick={onStart}>Play</button>
@@ -879,7 +992,7 @@ function LandingPage({ challenge, onStart, onGuide, onBoard, onFeedback, onChang
             </button>
             <button className="secondary hero-secondary" onClick={onGuide}>How to play</button>
           </div>
-          <ChallengeInbox />
+          <ChallengeInbox items={rivals} onSeeAll={() => setShowRivals(true)} />
         </div>
         <button className="scroll-cue" onClick={() => document.querySelector(".landing")?.scrollBy({ top: window.innerHeight * 0.82, behavior: "smooth" })} aria-label="See more">
           <span>see the game</span>
@@ -996,6 +1109,9 @@ function LandingPage({ challenge, onStart, onGuide, onBoard, onFeedback, onChang
         <p>Free. No install. Set a time in the next two minutes.</p>
         <button className="primary hero-start" onClick={onStart}>{challenge ? "Take the challenge" : "Start racing"}</button>
         <div className="closer-links">
+          <button onClick={() => setShowRivals(true)}>
+            ⚔️ Your rivals{pendingCount > 0 && <span className="rivals-badge">{pendingCount}</span>}
+          </button>
           <button onClick={onBoard}>🏆 Global leaderboard</button>
           <button onClick={onFeedback}>💬 Feedback</button>
         </div>
@@ -1011,6 +1127,7 @@ function LandingPage({ challenge, onStart, onGuide, onBoard, onFeedback, onChang
           {!changelogSeen && <span className="version-dot" aria-hidden />}
         </button>
       </footer>
+      {showRivals && <RivalsBoard items={rivals} onClose={() => setShowRivals(false)} />}
     </div>
   );
 }

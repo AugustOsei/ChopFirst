@@ -10,6 +10,7 @@ import GuideModal from "./GuideModal";
 import {
   createDashedStripGeometry,
   createRailGeometry,
+  BOOST_PICKUPS,
   createRoadGeometry,
   createShoulderGeometry,
   createStripGeometry,
@@ -212,7 +213,7 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
     () => (challenge?.messages || []).filter((note) => note.message).slice(-8),
     [challenge],
   );
-  const flowRef = useRef({ lastLap: 0, banner: null, msgIndex: 0, msg: null, wrongWayTime: 0, lastBoostsEarned: 0 });
+  const flowRef = useRef({ lastLap: 0, banner: null, msgIndex: 0, msg: null, wrongWayTime: 0, lastBoostsEarned: 0, lastStarsHit: 0 });
   const smokeRef = useRef(null);
   const sparksRef = useRef(null);
   const skidRef = useRef(null);
@@ -267,6 +268,10 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
     if (car.boostsEarned > flow.lastBoostsEarned) {
       flow.lastBoostsEarned = car.boostsEarned;
       flow.banner = { id: `boost-${car.boostsEarned}`, text: "+1 BOOST", until: car.timeMs + 1600 };
+    }
+    if (car.starsHit > flow.lastStarsHit) {
+      flow.lastStarsHit = car.starsHit;
+      flow.banner = { id: `star-${car.starsHit}`, text: "★ BOOST FULL", until: car.timeMs + 1600 };
     }
     if (flow.msgIndex < roadMessages.length) {
       const total = Math.min(1, raceProgress(car, trackLength) / (TRACK.laps * trackLength));
@@ -343,6 +348,7 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
       <TrackWorld />
       <StartGantry countdownRef={countdownRef} />
       <Pickups collected={car.coins} lap={Math.min(TRACK.laps - 1, car.lap)} />
+      <BoostStars collected={car.stars} lap={Math.min(TRACK.laps - 1, car.lap)} />
       <Ghosts challenge={challenge} pbRun={pbRun} car={car} showLabels={ghostLabels} />
       <RaceCar ref={carRef} carState={car} color={driver?.color} headlights={headlights} vehicle={driver?.vehicle || "street"} />
       <Particles ref={smokeRef} mode="smoke" count={70} />
@@ -2489,6 +2495,43 @@ function Coin({ position }) {
       <torusGeometry args={[0.42, 0.12, 14, 28]} />
       <meshStandardMaterial color="#ffd948" emissive="#8d6200" emissiveIntensity={0.32} roughness={0.36} metalness={0.28} />
     </mesh>
+  );
+}
+
+function BoostStars({ collected, lap }) {
+  return BOOST_PICKUPS.map((star, index) => {
+    if (collected.has(lap * 1000 + index)) return null;
+    const position = pointAt(star.distance, star.lateral);
+    position.y += 1.4;
+    return <BoostStar key={index} position={position} />;
+  });
+}
+
+// A bobbing, spinning glowing star that refills boost to full. Bigger and
+// brighter than a coin so it reads as a special pickup from a distance.
+function BoostStar({ position }) {
+  const ref = useRef(null);
+  const baseY = position.y;
+  useFrame((state, delta) => {
+    if (!ref.current) return;
+    ref.current.rotation.y += delta * 2.4;
+    const t = state.clock.elapsedTime;
+    ref.current.position.y = baseY + Math.sin(t * 2.2) * 0.22;
+    ref.current.scale.setScalar(1 + Math.sin(t * 4) * 0.06);
+  });
+  return (
+    <group ref={ref} position={position}>
+      <mesh castShadow>
+        <icosahedronGeometry args={[0.62, 0]} />
+        <meshStandardMaterial color="#6cd8ff" emissive="#39b6ff" emissiveIntensity={1.1} roughness={0.2} metalness={0.5} />
+      </mesh>
+      {/* faint halo so it glows on the road even in bright day */}
+      <mesh>
+        <sphereGeometry args={[0.95, 16, 16]} />
+        <meshBasicMaterial color="#bdecff" transparent opacity={0.18} depthWrite={false} />
+      </mesh>
+      <pointLight color="#6cd8ff" intensity={3.2} distance={9} />
+    </group>
   );
 }
 

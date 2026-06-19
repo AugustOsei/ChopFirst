@@ -303,6 +303,69 @@ button {
   color: #ffd15c;
 }
 
+.inbox-seeall {
+  margin-top: 4px;
+  padding: 4px 0 0;
+  background: none;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, .1);
+  color: #ffd15c;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Rivals: nav/closer entry + pending-count badge */
+.rivals-link { position: relative; }
+.rivals-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #ff3b4e;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  vertical-align: middle;
+  box-shadow: 0 0 10px rgba(255, 59, 78, .7);
+}
+
+/* Rivals board: one row per head-to-head duel, sorted by urgency */
+.rivals-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 7px; }
+.rival-row a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  background: rgba(255, 255, 255, .04);
+  color: #e8eef4;
+  text-decoration: none;
+}
+.rival-row a:hover { border-color: rgba(255, 209, 92, .5); background: rgba(255, 255, 255, .07); }
+.rival-row.chopped a { border-color: rgba(255, 59, 78, .45); }
+.rival-row.dormant a { opacity: .7; }
+.rival-dot {
+  flex: 0 0 9px; width: 9px; height: 9px; border-radius: 50%;
+  background: rgba(255, 255, 255, .3);
+}
+.rival-dot.chopped { background: #ff3b4e; box-shadow: 0 0 10px rgba(255, 59, 78, .9); animation: wrong-way-flash 1.2s steps(2) infinite; }
+.rival-dot.expiring { background: #ffb12e; box-shadow: 0 0 9px rgba(255, 177, 46, .8); }
+.rival-dot.leading { background: #43d17a; box-shadow: 0 0 9px rgba(67, 209, 122, .7); }
+.rival-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.rival-main strong { font-size: 14px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rival-main small { color: #8c9aa8; font-size: 11px; font-weight: 700; }
+.rival-gap { flex: 0 0 auto; font-size: 14px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.rival-gap.down { color: #ff6b78; }
+.rival-gap.up { color: #43d17a; }
+.rival-cta { flex: 0 0 auto; font-size: 11px; font-weight: 800; color: #ffd15c; }
+
 .title-guide {
   border: 0;
   background: none;
@@ -2615,11 +2678,51 @@ kbd {
 .tod-card.selected { border-color: #ffcf42; box-shadow: 0 0 0 1px #ffcf42 inset; }
 .tod-card.selected img { opacity: .95; }
 
-.identity { margin-top: 14px; border-top: 1px solid rgba(255, 255, 255, .1); padding-top: 10px; }
-.identity > summary { cursor: pointer; font-size: 12px; font-weight: 700; color: #c4d2de; list-style: none; }
-.identity > summary::-webkit-details-marker { display: none; }
-.identity > summary::before { content: "▸ "; color: #ffcf42; }
-.identity[open] > summary::before { content: "▾ "; }
+/* Driver name + photo: always visible at the top of the right column so new
+   players can't miss it (it used to be a collapsed <details>). */
+.identity-card {
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid rgba(255, 207, 66, .35);
+  border-radius: 12px;
+  padding: 12px 14px 14px;
+  margin-bottom: 16px;
+}
+.identity-row { display: flex; align-items: center; gap: 12px; }
+.identity-row .field { margin: 0; flex: 1; }
+.identity-row .name-field input { padding: 11px 12px; }
+.photo-pick {
+  position: relative;
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  border: 2px dashed rgba(255, 255, 255, .3);
+  overflow: hidden;
+  background: rgba(255, 255, 255, .06);
+}
+.photo-pick:hover { border-color: #ffcf42; }
+.photo-pick input { display: none; }
+.photo-pick img { width: 100%; height: 100%; object-fit: cover; }
+.photo-empty { display: grid; place-items: center; font-size: 20px; color: #ffcf42; line-height: 1; }
+.photo-empty i { font-style: normal; font-size: 9px; font-weight: 700; color: #9fb0c4; text-transform: uppercase; letter-spacing: .04em; }
+
+/* Per-track tabs on the global leaderboard. */
+.board-tabs { display: flex; gap: 8px; margin: 4px 0 14px; }
+.board-tab {
+  flex: 1;
+  padding: 9px 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  background: rgba(255, 255, 255, .05);
+  color: #c4d2de;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.board-tab.active { border-color: #ffcf42; color: #fff; background: rgba(255, 207, 66, .14); }
 
 .start-bar { display: flex; align-items: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
 .start-summary { flex: 1; min-width: 140px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #c4d2de; }
@@ -2655,7 +2758,9 @@ kbd {
 .garage-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
 .garage-screen .setup-title { color: #f4f7fa; font-size: clamp(30px, 4.2vw, 48px); }
 .garage-screen .setup-lede { color: #c4d2de; margin-top: 8px; }
-.garage-back { flex: 0 0 auto; }
+/* Compact Back — the global .ghost-button rule forces width:100% + margin-top,
+   which made this stretch across the header and collide with the title. */
+.garage-back { flex: 0 0 auto; width: auto; margin-top: 0; }
 .garage-main { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 20px; align-items: start; }
 .g-left, .g-right { display: flex; flex-direction: column; min-width: 0; }
 .g-left .garage { margin-top: 0; }
@@ -2670,6 +2775,14 @@ kbd {
 
 @media (max-width: 900px) {
   .garage-main { grid-template-columns: 1fr; }
+}
+
+/* Phones: stack the header so Back sits on its own row, top-left, and the title
+   gets the full width instead of being squeezed beside the button. */
+@media (max-width: 600px) {
+  .garage-head { flex-direction: column-reverse; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+  .garage-back { align-self: flex-start; }
+  .garage-screen .setup-title { font-size: 28px; line-height: 1.05; }
 }
 
 /* ---- race loading overlay ---- */

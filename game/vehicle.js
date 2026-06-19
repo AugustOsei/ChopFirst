@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { getTrackFrame, getTrackLength, PICKUPS, TRACK, pointAt, projectPointToTrack, wrapDistance } from "./track.js";
+import { BOOST_PICKUPS, getTrackFrame, getTrackLength, PICKUPS, TRACK, pointAt, projectPointToTrack, wrapDistance } from "./track.js";
 
 // All speeds in m/s, all angles in radians.
 // Yaw convention: forward = (sin(yaw), 0, cos(yaw)); +yaw rotates the nose toward +X.
@@ -171,6 +171,8 @@ export function createVehicleState(vehicleId = DEFAULT_VEHICLE) {
     boostsEarned: 0,
     driftScore: 0,
     coins: new Set(),
+    stars: new Set(),
+    starsHit: 0,
     timeMs: 0,
     ghost: [],
     lastGhostMs: 0,
@@ -366,6 +368,19 @@ export function updateVehicle(car, input, dt) {
     car.boostCharges = Math.min(MAX_BOOST_CHARGES, car.boostCharges + (earnedBoosts - car.boostsEarned));
     car.boostsEarned = earnedBoosts;
   }
+
+  // Boost stars respawn each lap like coins, but each one instantly refills boost
+  // to full. Wider grab window than a coin — they're rare and worth lining up for.
+  BOOST_PICKUPS.forEach((star, index) => {
+    const key = car.lap * 1000 + index;
+    if (car.stars.has(key)) return;
+    const delta = Math.abs(shortDistance(car.distance, star.distance, trackLength));
+    if (delta < 5 && Math.abs(car.lateral - star.lateral) < 1.7) {
+      car.stars.add(key);
+      car.boostCharges = MAX_BOOST_CHARGES;
+      car.starsHit += 1;
+    }
+  });
 
   if (car.drifting && Math.abs(fwd) > 12) {
     car.driftScore += Math.round((Math.abs(side) * 1.7 + Math.abs(car.yawVelocity) * 6) * dt * 10) / 10;

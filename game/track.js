@@ -150,6 +150,13 @@ const TRACK_DEFS = [
     environment: "mountain",
     controlPoints: AKINA_CONTROL_POINTS,
     coins: AKINA_COINS,
+    // Full-boost stars: rare glowing pickups that refill boost to max. Placed on
+    // straights so grabbing one is a line choice, not a scramble mid-corner.
+    boostStars: [
+      { pct: 0.065, lateral: 0 }, // launch straight
+      { pct: 0.43, lateral: 0 }, // approach straight before the summit
+      { pct: 0.83, lateral: 0.6 }, // recovery straight after the S-chicane
+    ],
   },
   {
     id: "accra-city",
@@ -167,6 +174,16 @@ const TRACK_DEFS = [
     environment: "city",
     controlPoints: ACCRA_CONTROL_POINTS,
     coins: autoCoins(),
+    // Double the stars of the mountain — the city loop is the longest, so boost
+    // top-ups come more often. Spread evenly, alternating lanes.
+    boostStars: [
+      { pct: 0.09, lateral: 0 },
+      { pct: 0.24, lateral: -1.4 },
+      { pct: 0.4, lateral: 1.4 },
+      { pct: 0.56, lateral: 0 },
+      { pct: 0.72, lateral: -1.4 },
+      { pct: 0.88, lateral: 1.4 },
+    ],
   },
 ];
 
@@ -407,6 +424,7 @@ function buildTrack(def) {
   }
 
   const pickups = def.coins.map((pickup) => ({ distance: pickup.pct * totalLength, lateral: pickup.lateral }));
+  const boostStars = (def.boostStars || []).map((star) => ({ distance: star.pct * totalLength, lateral: star.lateral }));
 
   return {
     def,
@@ -425,6 +443,7 @@ function buildTrack(def) {
     createShoulderGeometry,
     minimap,
     pickups,
+    boostStars,
   };
 }
 
@@ -439,6 +458,7 @@ export function setActiveTrack(id) {
   TRACK = active.def;
   MINIMAP = active.minimap;
   PICKUPS = active.pickups;
+  BOOST_PICKUPS = active.boostStars;
 }
 
 export function getActiveTrackId() {
@@ -450,7 +470,7 @@ export function getActiveTrackId() {
 export function getTrackData(id) {
   const t = TRACKS[id];
   if (!t) return null;
-  return { ...t.def, totalLength: t.totalLength, pickupCount: t.pickups.length };
+  return { ...t.def, totalLength: t.totalLength, pickupCount: t.pickups.length, boostStarCount: t.boostStars.length };
 }
 
 export function listTracks() {
@@ -461,6 +481,7 @@ export function listTracks() {
 export let TRACK = active.def;
 export let MINIMAP = active.minimap;
 export let PICKUPS = active.pickups;
+export let BOOST_PICKUPS = active.boostStars;
 
 export function getTrackLength() {
   return active.totalLength;
