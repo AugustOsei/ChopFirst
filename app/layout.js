@@ -1,3 +1,4 @@
+import Script from "next/script";
 import "./styles.css";
 
 // Lock the viewport: double-tap and pinch zoom hijack rapid taps on the race
@@ -24,6 +25,20 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
+      <head>
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-5KVJMC1RL9"
+          strategy="afterInteractive"
+        />
+        <Script id="gtag-init" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-5KVJMC1RL9');
+          `}
+        </Script>
+      </head>
       <body>{children}</body>
     </html>
   );
