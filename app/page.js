@@ -404,7 +404,7 @@ export default function Home() {
 
   const shareUrl = typeof window === "undefined" || !challengeId ? "" : `${window.location.origin}/?challenge=${challengeId}`;
   const shareText = encodeURIComponent(
-    shareMessage || `🏁 CHOP FIRST — a mountain racing game by August Osei. Beat my time within 24 hours if you can: ${shareUrl}`,
+    shareMessage || `🏁 CHOP FIRST — a racing game by August Osei. Beat my time within 24 hours if you can: ${shareUrl}`,
   );
 
   return (
@@ -963,13 +963,13 @@ function formatGap(ms) {
 
 function buildShareMessage(run, target, id) {
   const url = `${window.location.origin}/?challenge=${id}`;
-  const credit = "🏁 CHOP FIRST — a mountain racing game by August Osei.";
+  const credit = "🏁 CHOP FIRST — a racing game by August Osei.";
   if (!target) {
-    return `${credit} I just raced 3 laps down the ridge in ${formatTime(run.timeMs)}. You have 24 hours to chop my time: ${url}`;
+    return `${credit} I set ${formatTime(run.timeMs)}. You have 24 hours to chop my time: ${url}`;
   }
   const delta = run.timeMs - target.timeMs;
   if (delta < 0) {
-    return `🪓 CHOPPED! I beat ${target.name}'s ${formatTime(target.timeMs)} with a ${formatTime(run.timeMs)} in CHOP FIRST, the 24-hour mountain racing challenge by August Osei. Your move: ${url}`;
+    return `🪓 CHOPPED! I beat ${target.name}'s ${formatTime(target.timeMs)} with a ${formatTime(run.timeMs)} in CHOP FIRST by August Osei. Your move: ${url}`;
   }
   return `${credit} I ran ${formatTime(run.timeMs)} chasing ${target.name}'s time — still ${formatGap(delta)} behind. Race us both: ${url}`;
 }
