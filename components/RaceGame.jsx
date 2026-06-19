@@ -2523,14 +2523,17 @@ function BoostStar({ position }) {
     <group ref={ref} position={position}>
       <mesh castShadow>
         <icosahedronGeometry args={[0.62, 0]} />
-        <meshStandardMaterial color="#6cd8ff" emissive="#39b6ff" emissiveIntensity={1.1} roughness={0.2} metalness={0.5} />
+        <meshStandardMaterial color="#6cd8ff" emissive="#39b6ff" emissiveIntensity={1.7} toneMapped={false} roughness={0.2} metalness={0.5} />
       </mesh>
-      {/* faint halo so it glows on the road even in bright day */}
+      {/* Additive emissive halo for glow — deliberately NOT a real pointLight.
+          A scene light here changes the light count whenever a star mounts /
+          unmounts (pickup, lap respawn), forcing every material in the scene to
+          recompile its shader — a one-frame hitch right as you grab the star.
+          Emissive + additive blending glow at any time of day with zero recompiles. */}
       <mesh>
-        <sphereGeometry args={[0.95, 16, 16]} />
-        <meshBasicMaterial color="#bdecff" transparent opacity={0.18} depthWrite={false} />
+        <sphereGeometry args={[1.05, 16, 16]} />
+        <meshBasicMaterial color="#9fe4ff" transparent opacity={0.22} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
       </mesh>
-      <pointLight color="#6cd8ff" intensity={3.2} distance={9} />
     </group>
   );
 }
