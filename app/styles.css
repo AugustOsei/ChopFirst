@@ -1902,6 +1902,138 @@ textarea:focus {
   margin-top: 10px;
 }
 
+/* --- finish screen: save confirmation + share hub --- */
+
+.save-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 4px 0 16px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  background: rgba(255, 255, 255, .05);
+}
+
+.save-bar .save-text {
+  flex: 1;
+  display: grid;
+  gap: 1px;
+}
+
+.save-bar .save-text b { font-size: 13px; }
+.save-bar .save-text span { font-size: 11px; color: #8c9aa8; }
+
+.save-bar.saved {
+  background: rgba(67, 209, 122, .12);
+  border-color: rgba(67, 209, 122, .35);
+}
+
+.save-bar.saved .save-text b { color: #43d17a; }
+
+.save-bar.error {
+  background: rgba(255, 59, 78, .12);
+  border-color: rgba(255, 59, 78, .4);
+}
+
+.save-bar.error .save-text b { color: #ff8a95; }
+
+.save-check,
+.save-x {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 900;
+  animation: save-pop .32s cubic-bezier(.2, 1.4, .4, 1) both;
+}
+
+.save-check { background: #43d17a; color: #07210f; }
+.save-x { background: #ff3b4e; color: #fff; }
+
+@keyframes save-pop {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+
+.save-spinner {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .2);
+  border-top-color: #ffd15c;
+  animation: save-spin .7s linear infinite;
+}
+
+@keyframes save-spin { to { transform: rotate(360deg); } }
+
+.save-retry {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, .25);
+  background: rgba(255, 255, 255, .08);
+  color: #fff;
+  font-weight: 800;
+  font-size: 12px;
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.share-hero { margin-bottom: 8px; }
+
+/* Quick-share chips stay a compact row on every width (unlike the stacking
+   .share-row used on the full leaderboard view). */
+.share-row.share-quick {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.share-row.share-quick .secondary,
+.share-row.share-quick .link-button {
+  min-height: 44px;
+  padding: 0 8px;
+  font-size: 13px;
+}
+
+.share-wa { color: #6ff0a0; }
+
+.primary:disabled,
+.secondary:disabled,
+.link-button.is-disabled {
+  opacity: .5;
+  cursor: default;
+  box-shadow: none;
+  transform: none;
+  filter: none;
+  pointer-events: none;
+}
+
+.finish-nav {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+}
+
+.finish-nav-link {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: #b9c6d8;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.finish-nav-link:hover { color: #ffd15c; }
+.finish-nav-link.muted { color: #8c9aa8; }
+
 /* --- branding / onboarding --- */
 
 .brand {

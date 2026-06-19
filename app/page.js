@@ -172,7 +172,10 @@ export default function Home() {
   const [pb, setPb] = useState(null);
   const [pbRun, setPbRun] = useState(null);
   const [shareMessage, setShareMessage] = useState("");
+  const [saveState, setSaveState] = useState("idle"); // idle | saving | saved | error
+  const [saveRevived, setSaveRevived] = useState(false);
   const savePromiseRef = useRef(null);
+  const messagePostedRef = useRef(false);
 
   // Activate the selected track during render so TRACK (and everything derived
   // from it — medals, PB key, challenge matching, run tagging) reflects it.
@@ -295,10 +298,18 @@ export default function Home() {
     setPb({ isNew, previous: stored?.timeMs ?? null });
     setResult(run);
     setScreen("finish");
+    setMessage("");
+    messagePostedRef.current = false;
+    saveRun(run);
+  }
 
-    // auto-save so a closed tab can't lose the score; the message is optional and added after
+  // Post the run to its leaderboard. Auto-runs on finish so a closed tab can't
+  // lose the score; can also be retried from the finish screen if it fails.
+  function saveRun(run) {
+    setSaveState("saving");
+    setSaveRevived(false);
+    setStatus("");
     const target = onThisTrack(challenge) ? challenge?.runs?.[0] ?? null : null;
-    setStatus("Saving your run…");
     const payload = JSON.stringify({ ...run, trackId: TRACK.id, deviceId: getDeviceId() });
     // A run on an existing same-track challenge always posts to its board —
     // even a lapsed one, which the server revives. Only a brand-new run, or a
@@ -314,6 +325,7 @@ export default function Home() {
         if (!res.ok) {
           setStatus(data.error || "Could not save this run.");
           if (data.challenge) setChallenge(data.challenge);
+          setSaveState("error");
           return null;
         }
         setChallenge(data);
@@ -321,37 +333,70 @@ export default function Home() {
         window.history.replaceState(null, "", `/?challenge=${data.id}`);
         upsertTracked({ id: data.id, myTimeMs: run.timeMs, lastSeenRuns: data.runs.length });
         setShareMessage(buildShareMessage(run, target, data.id));
-        setStatus(data.revived ? "Challenge revived — send it again ✓" : "Saved to the leaderboard ✓");
+        setSaveRevived(!!data.revived);
+        setSaveState("saved");
         logEvent("run_saved");
         return data;
       } catch {
+        setSaveState("error");
         setStatus("Could not save this run — check your connection.");
         return null;
       }
     })();
   }
 
-  async function continueToResults() {
+  // Road messages need the saved challenge id, so flush once the save resolves.
+  // Fire-and-forget from share/nav actions; idempotent via messagePostedRef.
+  async function flushMessage() {
+    const text = message.trim();
+    if (messagePostedRef.current || !text) return;
     const saved = savePromiseRef.current ? await savePromiseRef.current : null;
-    if (saved && message.trim()) {
+    const id = saved?.id || (onThisTrack(challenge) ? challengeId : null);
+    if (messagePostedRef.current || !id) return;
+    messagePostedRef.current = true;
+    try {
+      const res = await fetch(`/api/challenges/${id}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: driver.name || "Street Driver", photo: driver.photo, message: text }),
+      });
+      if (res.ok) setChallenge(await res.json());
+    } catch {
+      // message is a nice-to-have; don't block the flow
+    }
+  }
+
+  // Smart share: native share sheet on mobile, WhatsApp fallback elsewhere.
+  async function shareChallenge() {
+    if (saveState !== "saved") return;
+    flushMessage();
+    logEvent("share_primary");
+    const text = shareMessage || `🏁 CHOP FIRST — beat my time within 24 hours: ${shareUrl}`;
+    if (typeof navigator !== "undefined" && navigator.share) {
       try {
-        const res = await fetch(`/api/challenges/${saved.id}/messages`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: driver.name || "Street Driver", photo: driver.photo, message: message.trim() }),
-        });
-        if (res.ok) setChallenge(await res.json());
+        await navigator.share({ title: "CHOP FIRST", text, url: shareUrl });
+        return;
       } catch {
-        // message is a nice-to-have; don't block the flow
+        // user dismissed the sheet — fall through to WhatsApp
       }
     }
-    setMessage("");
-    setStatus("");
-    setScreen(saved || challenge ? "results" : "title");
+    window.open(`https://wa.me/?text=${shareText}`, "_blank");
+  }
+
+  async function viewLeaderboard() {
+    flushMessage();
+    const saved = savePromiseRef.current ? await savePromiseRef.current : null;
+    if (saved || challenge) setScreen("results");
+  }
+
+  function runAgain() {
+    flushMessage();
+    startRace();
   }
 
   function goHome() {
     // the auto-save kicked off in finishRace keeps running in the background
+    flushMessage();
     setMessage("");
     setStatus("");
     setScreen("title");
@@ -551,7 +596,11 @@ export default function Home() {
           );
         })()}
 
-        {screen === "finish" && result && (
+        {screen === "finish" && result && (() => {
+          const total = challenge?.runs?.length ?? 0;
+          const rank = challenge ? challenge.runs.filter((r) => r.timeMs < result.timeMs).length + 1 : null;
+          const shareReady = saveState === "saved";
+          return (
           <Panel>
             <p className="eyebrow">Run complete</p>
             <h2>{formatTime(result.timeMs)}</h2>
@@ -562,6 +611,35 @@ export default function Home() {
               <span>Drift <b>{result.driftScore}</b></span>
               <span>Boosts used <b>{result.boostUses}</b></span>
             </div>
+
+            <div className={`save-bar ${saveState}`} aria-live="polite">
+              {saveState === "saving" && (
+                <>
+                  <span className="save-spinner" aria-hidden="true" />
+                  <div className="save-text"><b>Posting your run…</b></div>
+                </>
+              )}
+              {saveState === "saved" && (
+                <>
+                  <span className="save-check" aria-hidden="true">✓</span>
+                  <div className="save-text">
+                    <b>{saveRevived ? "Challenge revived — send it again" : "Live on the leaderboard"}</b>
+                    {rank && <span>P{rank} of {total} · open for 24 hours</span>}
+                  </div>
+                </>
+              )}
+              {saveState === "error" && (
+                <>
+                  <span className="save-x" aria-hidden="true">!</span>
+                  <div className="save-text">
+                    <b>Couldn’t save your run</b>
+                    <span>{status || "Check your connection."}</span>
+                  </div>
+                  <button className="save-retry" onClick={() => saveRun(result)}>Retry</button>
+                </>
+              )}
+            </div>
+
             <label className="field">
               Road message for the next drivers
               <input value={message} onChange={(event) => setMessage(event.target.value)} maxLength={100} placeholder="e.g. brake before the ridge hairpin" />
@@ -573,11 +651,48 @@ export default function Home() {
                 </button>
               ))}
             </div>
-            <button className="primary" onClick={continueToResults}>Continue to leaderboard</button>
-            <button className="ghost-button back-button" onClick={goHome}>‹ Home</button>
-            {status && <p className="status">{status}</p>}
+
+            <p className="share-nudge">Send the link — whoever opens it gets a fresh 24 hours to chop your time.</p>
+            <button className="primary share-hero" disabled={!shareReady} onClick={shareChallenge}>
+              {saveState === "saved" ? "Send the challenge" : saveState === "error" ? "Run not saved yet" : "Saving your run…"}
+            </button>
+            <div className="share-row share-quick">
+              <a
+                className={`secondary link-button share-wa${shareReady ? "" : " is-disabled"}`}
+                href={shareReady ? `https://wa.me/?text=${shareText}` : undefined}
+                target="_blank"
+                rel="noreferrer"
+                aria-disabled={!shareReady}
+                onClick={(event) => { if (!shareReady) { event.preventDefault(); return; } flushMessage(); logEvent("share_whatsapp"); }}
+              >
+                WhatsApp
+              </a>
+              <a
+                className={`secondary link-button${shareReady ? "" : " is-disabled"}`}
+                href={shareReady ? `sms:?&body=${shareText}` : undefined}
+                aria-disabled={!shareReady}
+                onClick={(event) => { if (!shareReady) { event.preventDefault(); return; } flushMessage(); logEvent("share_sms"); }}
+              >
+                SMS
+              </a>
+              <button
+                className="secondary"
+                disabled={!shareReady}
+                onClick={() => { navigator.clipboard.writeText(shareUrl); flushMessage(); logEvent("share_copy"); }}
+              >
+                Copy
+              </button>
+            </div>
+
+            <div className="finish-nav">
+              <button className="finish-nav-link" onClick={runAgain}>↻ Run it again</button>
+              {challenge && <button className="finish-nav-link" onClick={viewLeaderboard}>≣ Leaderboard</button>}
+              <button className="finish-nav-link muted" onClick={goHome}>⌂ Home</button>
+            </div>
+            <button className="feedback-link" onClick={() => setShowFeedback(true)}>🐞 Report a bug or suggest a feature</button>
           </Panel>
-        )}
+          );
+        })()}
 
         {screen === "results" && challenge && (
           <Panel wide>
@@ -586,12 +701,13 @@ export default function Home() {
             <Leaderboard challenge={challenge} />
             <p className="share-nudge">Send the link — whoever opens it gets a fresh 24 hours to chop your time.</p>
             <div className="share-row">
-              <a className="primary link-button" href={`https://wa.me/?text=${shareText}`} target="_blank" onClick={() => logEvent("share_whatsapp")}>WhatsApp</a>
-              <a className="secondary link-button" href={`sms:?&body=${shareText}`} onClick={() => logEvent("share_sms")}>SMS</a>
-              <button className="secondary" onClick={() => { navigator.clipboard.writeText(shareUrl); logEvent("share_copy"); }}>Copy link</button>
+              <a className="primary link-button" href={`https://wa.me/?text=${shareText}`} target="_blank" rel="noreferrer" onClick={() => { flushMessage(); logEvent("share_whatsapp"); }}>WhatsApp</a>
+              <a className="secondary link-button" href={`sms:?&body=${shareText}`} onClick={() => { flushMessage(); logEvent("share_sms"); }}>SMS</a>
+              <button className="secondary" onClick={() => { navigator.clipboard.writeText(shareUrl); flushMessage(); logEvent("share_copy"); }}>Copy link</button>
             </div>
             <div className="button-row">
-              <button className="ghost-button" onClick={startRace}>Run it again</button>
+              {result && <button className="ghost-button" onClick={() => setScreen("finish")}>‹ Back</button>}
+              <button className="ghost-button" onClick={runAgain}>Run it again</button>
               <button className="ghost-button" onClick={goHome}>Home</button>
             </div>
             <button className="feedback-link" onClick={() => setShowFeedback(true)}>🐞 Report a bug or suggest a feature</button>
