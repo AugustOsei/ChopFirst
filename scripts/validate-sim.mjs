@@ -38,6 +38,16 @@ const run = {
   ghost: decimateGhost(car.ghost, 500),
 };
 
+// Simulate frame-hitch projection snaps: bump cumulative distance forward at a
+// few scattered samples so those segments read as a high (but isolated) speed —
+// the artifact that falsely rejected real phone runs on the city circuit.
+function withGlitches(ghost, count) {
+  const out = ghost.map((s) => ({ ...s }));
+  const step = Math.floor(out.length / (count + 1));
+  for (let k = 1; k <= count; k += 1) out[k * step].d += 40;
+  return out;
+}
+
 const cases = {
   // expect: accepted (null)
   legitBotRun: { expect: null, got: validateRun(run) },
@@ -64,6 +74,12 @@ const cases = {
   legacyNoTrack: { expect: null, got: validateRun({ ...run, trackId: undefined }) },
   // expect: rejected — a track this server doesn't know
   unknownTrack: { expect: "reject", got: validateRun({ ...run, trackId: "midnight-bay" }) },
+  // expect: accepted — a legit run with a handful of frame-hitch distance snaps
+  // (the bug that rejected real phone runs on the city circuit)
+  frameHitchGlitches: { expect: null, got: validateRun({ ...run, ghost: withGlitches(run.ghost, 8) }) },
+  // expect: rejected — glitches on a large fraction of the trace = a forgery,
+  // not isolated jitter
+  glitchFlood: { expect: "reject", got: validateRun({ ...run, ghost: withGlitches(run.ghost, Math.floor(run.ghost.length * 0.2)) }) },
 };
 
 let failed = false;
