@@ -14,6 +14,10 @@ import { listVehicles, vehicleStats, DEFAULT_VEHICLE } from "../game/vehicle";
 // Live 3D garage preview is client-only (R3F Canvas can't server-render).
 const GaragePreview = dynamic(() => import("../components/GaragePreview"), { ssr: false });
 
+// Baked into this bundle at build time; /api/version reports the live deploy's
+// id. If they differ, this tab is running pre-deploy code and should refresh.
+const CLIENT_BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID || "dev";
+
 const SPEC_ROWS = [
   ["speed", "Top Speed"],
   ["accel", "Acceleration"],
@@ -174,6 +178,9 @@ export default function Home() {
   const [shareMessage, setShareMessage] = useState("");
   const [saveState, setSaveState] = useState("idle"); // idle | saving | saved | error
   const [saveRevived, setSaveRevived] = useState(false);
+  // True once we detect this tab is running pre-deploy code (see CLIENT_BUILD_ID).
+  // A stale tab can post a run the new server rejects, so we nudge a refresh.
+  const [updateAvailable, setUpdateAvailable] = useState(false);
   const savePromiseRef = useRef(null);
   const messagePostedRef = useRef(false);
 
@@ -210,6 +217,29 @@ export default function Home() {
     setChangelogSeen(localStorage.getItem("chopfirst.seenVersion") === CURRENT_VERSION);
     const savedTime = localStorage.getItem("chopfirst.timeOfDay");
     if (savedTime === "day" || savedTime === "dusk" || savedTime === "night") setTimeOfDayState(savedTime);
+  }, []);
+
+  // Detect a stale tab: ask the live server for its build id and compare to the
+  // one baked into this bundle. Checked on mount and whenever the tab regains
+  // focus (a phone tab left open across a redeploy is the common case), so a
+  // player is nudged to refresh before a race rather than losing the run to it.
+  useEffect(() => {
+    let cancelled = false;
+    const check = () => {
+      if (document.visibilityState === "hidden") return;
+      fetch("/api/version", { cache: "no-store" })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (cancelled || !data?.buildId) return;
+          if (CLIENT_BUILD_ID !== "dev" && data.buildId !== "dev" && data.buildId !== CLIENT_BUILD_ID) {
+            setUpdateAvailable(true);
+          }
+        })
+        .catch(() => {});
+    };
+    check();
+    document.addEventListener("visibilitychange", check);
+    return () => { cancelled = true; document.removeEventListener("visibilitychange", check); };
   }, []);
 
   function setTimeOfDay(value) {
@@ -310,7 +340,7 @@ export default function Home() {
     setSaveRevived(false);
     setStatus("");
     const target = onThisTrack(challenge) ? challenge?.runs?.[0] ?? null : null;
-    const payload = JSON.stringify({ ...run, trackId: TRACK.id, deviceId: getDeviceId() });
+    const payload = JSON.stringify({ ...run, trackId: TRACK.id, deviceId: getDeviceId(), buildId: CLIENT_BUILD_ID });
     // A run on an existing same-track challenge always posts to its board —
     // even a lapsed one, which the server revives. Only a brand-new run, or a
     // challenge from another track, starts a fresh board.
@@ -409,6 +439,13 @@ export default function Home() {
 
   return (
     <>
+      {updateAvailable && (
+        <div className="update-banner" role="status">
+          <span>A new version of CHOP FIRST is ready.</span>
+          <button className="update-refresh" onClick={() => window.location.reload()}>Refresh</button>
+          <button className="update-dismiss" aria-label="Dismiss" onClick={() => setUpdateAvailable(false)}>✕</button>
+        </div>
+      )}
       {screen === "title" ? (
         <LandingPage
           challenge={challenge}
@@ -633,9 +670,11 @@ export default function Home() {
                   <span className="save-x" aria-hidden="true">!</span>
                   <div className="save-text">
                     <b>Couldn’t save your run</b>
-                    <span>{status || "Check your connection."}</span>
+                    <span>{updateAvailable ? "A new version is available — refresh to save your run." : status || "Check your connection."}</span>
                   </div>
-                  <button className="save-retry" onClick={() => saveRun(result)}>Retry</button>
+                  {updateAvailable
+                    ? <button className="save-retry" onClick={() => window.location.reload()}>Refresh</button>
+                    : <button className="save-retry" onClick={() => saveRun(result)}>Retry</button>}
                 </>
               )}
             </div>
