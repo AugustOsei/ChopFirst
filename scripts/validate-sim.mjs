@@ -38,9 +38,8 @@ const run = {
   ghost: decimateGhost(car.ghost, 500),
 };
 
-// Simulate frame-hitch projection snaps: bump cumulative distance forward at a
-// few scattered samples so those segments read as a high (but isolated) speed —
-// the artifact that falsely rejected real phone runs on the city circuit.
+// Inject frame-hitch projection snaps: bump cumulative distance at scattered
+// samples. The lenient policy accepts these — they were never a forgery.
 function withGlitches(ghost, count) {
   const out = ghost.map((s) => ({ ...s }));
   const step = Math.floor(out.length / (count + 1));
@@ -48,38 +47,34 @@ function withGlitches(ghost, count) {
   return out;
 }
 
+// LENIENT-POLICY contract: reject ONLY blatant non-runs (no/incomplete race
+// data, or a physically-impossible time). Everything a real run could ever
+// produce — including odd boost/coin counts, glitchy traces, and merely-fast
+// (but possible) times — is accepted. Sharing must never be blocked for them.
 const cases = {
   // expect: accepted (null)
   legitBotRun: { expect: null, got: validateRun(run) },
   // expect: rejected — the classic curl cheat, a bare time with no trace
   bareTimePost: { expect: "reject", got: validateRun({ timeMs: 65000, name: "hacker" }) },
-  // expect: rejected — real ghost, fraudulently lowered time
-  loweredTime: { expect: "reject", got: validateRun({ ...run, timeMs: Math.round(run.timeMs * 0.5) }) },
-  // expect: rejected — ghost timestamps compressed to match a fast fake time
-  compressedGhost: {
-    expect: "reject",
-    got: validateRun({
-      ...run,
-      timeMs: Math.round(run.timeMs * 0.45),
-      ghost: run.ghost.map((s) => ({ ...s, t: Math.round(s.t * 0.45) })),
-    }),
-  },
-  // expect: rejected — trace stops partway through the race
+  // expect: rejected — too few samples to be a real race
+  shortGhost: { expect: "reject", got: validateRun({ ...run, ghost: run.ghost.slice(0, 20) }) },
+  // expect: rejected — trace never reaches the finish line (incomplete race data)
   truncatedGhost: { expect: "reject", got: validateRun({ ...run, ghost: run.ghost.slice(0, 150) }) },
-  // expect: rejected — impossible pickup count
-  coinFlood: { expect: "reject", got: validateRun({ ...run, coins: 999 }) },
+  // expect: rejected — a time physically faster than the car can cross the course
+  impossiblyFastTime: { expect: "reject", got: validateRun({ ...run, timeMs: 5000 }) },
+  // expect: ACCEPTED — fast but still physically possible; leniency lets it through
+  fastButPossibleTime: { expect: null, got: validateRun({ ...run, timeMs: Math.round(run.timeMs * 0.85) }) },
+  // expect: ACCEPTED — boost/coin counts no longer gate a run (they false-rejected legit play)
+  boostFlood: { expect: null, got: validateRun({ ...run, boostUses: 999 }) },
+  coinFlood: { expect: null, got: validateRun({ ...run, coins: 999 }) },
+  // expect: ACCEPTED — a handful of frame-hitch distance snaps (the city-circuit bug)
+  frameHitchGlitches: { expect: null, got: validateRun({ ...run, ghost: withGlitches(run.ghost, 8) }) },
   // expect: accepted — run explicitly tagged with the current track
   explicitTrack: { expect: null, got: validateRun({ ...run, trackId: TRACK.id }) },
   // expect: accepted — legacy client payload with no trackId resolves to the default track
   legacyNoTrack: { expect: null, got: validateRun({ ...run, trackId: undefined }) },
   // expect: rejected — a track this server doesn't know
   unknownTrack: { expect: "reject", got: validateRun({ ...run, trackId: "midnight-bay" }) },
-  // expect: accepted — a legit run with a handful of frame-hitch distance snaps
-  // (the bug that rejected real phone runs on the city circuit)
-  frameHitchGlitches: { expect: null, got: validateRun({ ...run, ghost: withGlitches(run.ghost, 8) }) },
-  // expect: rejected — glitches on a large fraction of the trace = a forgery,
-  // not isolated jitter
-  glitchFlood: { expect: "reject", got: validateRun({ ...run, ghost: withGlitches(run.ghost, Math.floor(run.ghost.length * 0.2)) }) },
 };
 
 let failed = false;
