@@ -1117,7 +1117,10 @@ function LandingPage({ challenge, onStart, onGuide, onBoard, onFeedback, onChang
 
       {/* hero */}
       <section className="hero">
-        <img src="/cover.jpg" alt="" className="hero-art" />
+        <div className="hero-bg" aria-hidden>
+          <img src="/cover.jpg" alt="" className="hero-art is-akina" />
+          <img src="/cover-accra.jpg" alt="" className="hero-art is-accra" />
+        </div>
         <div className="hero-scrim" />
         <div className="hero-inner">
           <p className="eyebrow title-fade" style={{ animationDelay: ".15s" }}>24-hour touge time attack</p>

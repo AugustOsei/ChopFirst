@@ -520,6 +520,11 @@ button {
   overflow: hidden;
 }
 
+.hero-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
 .hero-art {
   position: absolute;
   inset: 0;
@@ -527,6 +532,28 @@ button {
   height: 100%;
   object-fit: cover;
   object-position: 60% 42%;
+  will-change: opacity, transform;
+  backface-visibility: hidden;
+}
+/* Two hero stills slow-zoom (Ken Burns) and cross-dissolve on a shared 24s loop:
+   Akina shows first half, Accra second half, each fading in as the other fades out. */
+.hero-art.is-akina { animation: heroFadeA 24s ease-in-out infinite, heroKenA 24s ease-in-out infinite; }
+.hero-art.is-accra { object-position: 50% 56%; animation: heroFadeB 24s ease-in-out infinite, heroKenB 24s ease-in-out infinite; }
+@keyframes heroFadeA { 0%, 40% { opacity: 1; } 50%, 90% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes heroFadeB { 0%, 40% { opacity: 0; } 50%, 90% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes heroKenA {
+  0% { transform: scale(1.02) translate(0, 0); }
+  50% { transform: scale(1.12) translate(-1.5%, -1.2%); }
+  100% { transform: scale(1.02) translate(0, 0); }
+}
+@keyframes heroKenB {
+  0% { transform: scale(1.12) translate(1.2%, 0); }
+  50% { transform: scale(1.03) translate(0, -1%); }
+  100% { transform: scale(1.12) translate(1.2%, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-art.is-akina, .hero-art.is-accra { animation: none; }
+  .hero-art.is-accra { opacity: 0; }
 }
 
 .hero-scrim {
@@ -2572,6 +2599,10 @@ kbd {
     gap: 8px 18px;
     font-size: 12.5px;
   }
+
+  /* The Accra still is a wide street scene; a tall portrait crop at the desktop
+     framing loses the foreground drift car. Reframe toward it. */
+  .hero-art.is-accra { object-position: 38% 42%; }
 }
 
 @media (max-width: 720px) {
