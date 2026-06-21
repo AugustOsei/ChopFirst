@@ -4,8 +4,8 @@ A browser-based arcade touge racer with a 24-hour challenge twist: race three la
 mountain sprint, set your time, then send the link to friends — they have **24 hours to chop it**.
 
 Built with Next.js, React Three Fiber, and a hand-rolled arcade vehicle model.
-Every visual is procedural Three.js geometry and every sound is synthesized
-with WebAudio — there are no game assets to download.
+The world and effects are procedural Three.js geometry, the cars are lightweight
+glTF models, and every sound is synthesized with WebAudio.
 
 **Play it, then leave a road message** — your note (and photo) pops up mid-race
 for the next drivers on your challenge link.
@@ -82,14 +82,29 @@ UPSTASH_REDIS_REST_TOKEN=...   # or KV_REST_API_TOKEN
 
 No code changes required — `lib/challenges.js` detects them automatically.
 
-**Owner endpoints.** Set one more environment variable to read player feedback
-and full storage diagnostics:
+**Player feedback → your inbox.** Bug reports and feature ideas are emailed to
+you via [Resend](https://resend.com) (free tier is plenty) the moment a player
+hits send — no store to poll. Set:
+
+```
+RESEND_API_KEY=re_...                                          # from resend.com
+FEEDBACK_EMAIL_TO=you@example.com                              # where feedback lands
+FEEDBACK_EMAIL_FROM=ChopFirst Feedback <onboarding@resend.dev> # optional
+```
+
+`onboarding@resend.dev` works out of the box but only delivers to the address on
+your Resend account; verify a domain (e.g. augustwheel.com) to send freely and
+stay out of spam. If a player leaves an email as their contact, it's set as the
+reply-to so you can answer directly. Without `RESEND_API_KEY` + `FEEDBACK_EMAIL_TO`
+(e.g. local dev) feedback falls back to the same data store as challenges, so
+nothing is lost.
+
+**Owner diagnostics.** Set a private key to read funnel metrics and storage health:
 
 ```
 FEEDBACK_ADMIN_KEY=<any random string you keep private>
 ```
 
-- `/api/feedback?key=<your key>` — all bug reports and feature suggestions, newest first.
 - `/api/metrics?key=<your key>` — daily funnel counters for the last 14 days
   (links opened, races started/finished, runs saved, shares, feedback).
 - `/api/health?key=<your key>` — storage backend diagnostics (read/write checks).
@@ -124,6 +139,24 @@ the ghost recording, or vehicle speed limits.
 ## Credits
 
 Created by [Augustine Osei](https://www.linkedin.com/in/augustineosei/) · [augustwheel.com](https://www.augustwheel.com)
+
+### Built with
+
+- **[Next.js](https://nextjs.org)** — app router and API routes.
+- **[React Three Fiber](https://r3f.docs.pmnd.rs)** / **[Three.js](https://threejs.org)** + **[drei](https://github.com/pmndrs/drei)** — the 3D scene.
+- **[Blender](https://www.blender.org)** — cleaning up and exporting the vehicle models to glTF.
+- **[Higgsfield](https://higgsfield.ai)** — AI-generated landing and promo imagery (`public/`, `promo/`).
+- **[Upstash Redis](https://upstash.com)** / Vercel KV — challenge, leaderboard, and metrics storage.
+- **[Resend](https://resend.com)** — feedback email.
+- **[Vercel](https://vercel.com)** — hosting.
+
+### Map data
+
+One of the tracks is built from a real Accra street route, generated with
+**[OSRM](https://project-osrm.org)** over **OpenStreetMap** data and projected to a
+local metric spline (`.ghana-route/`). Map data © **[OpenStreetMap](https://www.openstreetmap.org/copyright)
+contributors**, available under the
+[Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/).
 
 ### 3D vehicle models
 

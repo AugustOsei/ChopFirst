@@ -2298,14 +2298,28 @@ kbd {
 
 .guide-credits {
   display: flex;
-  justify-content: space-between;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
   margin-top: 22px;
   padding-top: 14px;
   border-top: 1px solid rgba(255, 255, 255, .12);
   color: #8c9aa8;
   font-size: 12px;
   font-weight: 700;
+}
+
+.guide-credits-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.guide-attribution {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #76828f;
 }
 
 .guide-credits a {

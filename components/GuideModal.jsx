@@ -56,8 +56,14 @@ export default function GuideModal({ onClose }) {
         </section>
 
         <footer className="guide-credits">
-          <a href="https://www.augustwheel.com" target="_blank" rel="noopener noreferrer">augustwheel.com</a>
-          <span>Created by <a href="https://www.linkedin.com/in/augustineosei/" target="_blank" rel="noopener noreferrer">Augustine Osei</a></span>
+          <div className="guide-credits-row">
+            <a href="https://www.augustwheel.com" target="_blank" rel="noopener noreferrer">augustwheel.com</a>
+            <span>Created by <a href="https://www.linkedin.com/in/augustineosei/" target="_blank" rel="noopener noreferrer">Augustine Osei</a></span>
+          </div>
+          <p className="guide-attribution">
+            Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors (ODbL).
+            Vehicle models via <a href="https://sketchfab.com" target="_blank" rel="noopener noreferrer">Sketchfab</a> (CC BY / CC BY-SA).
+          </p>
         </footer>
       </div>
     </div>

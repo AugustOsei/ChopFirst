@@ -12,6 +12,9 @@ data/
 .qa-sim/
 .ghana-route/
 
+# local marketing assets (generated promo images, blog drafts)
+promo/
+
 # env
 .env
 .env.*
