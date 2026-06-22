@@ -134,6 +134,14 @@ const BOOST_COOLDOWN = 2.2;
 export const COINS_PER_BOOST = 15;
 export const MAX_BOOST_CHARGES = 5;
 const RAIL_RESTITUTION = 0.14;
+// Soft cushion: a band this many metres inside the rail where a spring eases the
+// car back toward the road, growing with how deep it is, so contact gently returns
+// the car instead of pinning it. The spring sets the inward (track-normal) speed
+// directly each frame so grip can't bleed it away; it ramps from 0 at the band's
+// inner edge to RAIL_CUSHION_SPRING * RAIL_CUSHION_MARGIN at the rail itself.
+// Margin is kept modest so a deliberate rail-hugging line still works.
+const RAIL_CUSHION_MARGIN = 1.0;
+const RAIL_CUSHION_SPRING = 4.0;
 const CAR_HALF_WIDTH = 1.1;
 const RAIL_LIMIT = TRACK.railOffset - CAR_HALF_WIDTH - 0.2;
 
@@ -316,26 +324,40 @@ export function updateVehicle(car, input, dt) {
   car.railSide = 0;
   car.railContact = 0;
 
-  if (Math.abs(car.lateral) > RAIL_LIMIT) {
+  const cushionLimit = RAIL_LIMIT - RAIL_CUSHION_MARGIN;
+  if (Math.abs(car.lateral) > cushionLimit) {
     const side2 = Math.sign(car.lateral);
     const outward = projection.frame.normal.clone().multiplyScalar(side2);
-    const intoWall = car.velocity.dot(outward);
-    if (intoWall > 0) {
-      // Remove the wall-normal velocity (tiny bounce back), then convert part of
-      // it into motion along the rail so hits glance instead of dead-stopping.
-      car.velocity.addScaledVector(outward, -intoWall * (1 + RAIL_RESTITUTION));
-      const alongRail = projection.frame.tangent.clone();
-      if (alongRail.dot(forward) < 0) alongRail.negate(); // deflect with the direction of travel
-      car.velocity.addScaledVector(alongRail, intoWall * 0.35);
-      // Scrape friction scales with how head-on the hit was.
-      car.velocity.multiplyScalar(Math.max(0.62, 1 - intoWall * 0.025));
-      car.impact = Math.max(car.impact, Math.min(1, intoWall / 14));
+
+    // Hard backstop: a fast hit still punches through the cushion to the rail.
+    // Bounce off the wall normal, glance part of it along the rail, and scrape
+    // speed by how head-on it was — only here do we register a contact for FX.
+    if (Math.abs(car.lateral) > RAIL_LIMIT) {
+      const intoWall = car.velocity.dot(outward);
+      if (intoWall > 0) {
+        car.velocity.addScaledVector(outward, -intoWall * (1 + RAIL_RESTITUTION));
+        const alongRail = projection.frame.tangent.clone();
+        if (alongRail.dot(forward) < 0) alongRail.negate(); // deflect with travel
+        car.velocity.addScaledVector(alongRail, intoWall * 0.35);
+        car.velocity.multiplyScalar(Math.max(0.62, 1 - intoWall * 0.025));
+        car.impact = Math.max(car.impact, Math.min(1, intoWall / 14));
+      }
+      car.lateral = side2 * (RAIL_LIMIT - 0.02);
+      car.position.copy(projection.frame.position).addScaledVector(projection.frame.normal, car.lateral);
+      car.railContact = 1;
+      car.scrapeTimer = 0.2;
     }
-    car.lateral = side2 * (RAIL_LIMIT - 0.02);
-    car.position.copy(projection.frame.position).addScaledVector(projection.frame.normal, car.lateral);
-    car.railSide = side2;
-    car.railContact = 1;
-    car.scrapeTimer = 0.35;
+
+    // Soft cushion spring: ease the car back toward the road, growing with depth,
+    // so it peels off the wall to the band's inner edge instead of riding it. We
+    // set the inward (track-normal) speed directly each frame — re-asserted past
+    // grip's damping — and only when the car isn't already heading in faster.
+    const penetration = Math.abs(car.lateral) - cushionLimit;
+    const push = RAIL_CUSHION_SPRING * penetration;
+    const vOut = car.velocity.dot(outward);
+    if (vOut > -push) car.velocity.addScaledVector(outward, -push - vOut);
+
+    car.railSide = side2; // feeds the steer-away assist
     fwd = car.velocity.dot(forward);
     side = car.velocity.dot(right);
   }
