@@ -63,6 +63,7 @@ export default function GuideModal({ onClose }) {
           <p className="guide-attribution">
             Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors (ODbL).
             Vehicle models via <a href="https://sketchfab.com" target="_blank" rel="noopener noreferrer">Sketchfab</a> (CC BY / CC BY-SA).
+            Key art via <a href="https://higgsfield.ai" target="_blank" rel="noopener noreferrer">Higgsfield</a> and Nano Banana.
           </p>
         </footer>
       </div>

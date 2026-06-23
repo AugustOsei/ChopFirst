@@ -146,6 +146,7 @@ Created by [Augustine Osei](https://www.linkedin.com/in/augustineosei/) · [augu
 - **[React Three Fiber](https://r3f.docs.pmnd.rs)** / **[Three.js](https://threejs.org)** + **[drei](https://github.com/pmndrs/drei)** — the 3D scene.
 - **[Blender](https://www.blender.org)** — cleaning up and exporting the vehicle models to glTF.
 - **[Higgsfield](https://higgsfield.ai)** — AI-generated landing and promo imagery (`public/`, `promo/`).
+- **Nano Banana** (Google Gemini image model) — the garage backdrop and the Accra circuit cover image.
 - **[Upstash Redis](https://upstash.com)** / Vercel KV — challenge, leaderboard, and metrics storage.
 - **[Resend](https://resend.com)** — feedback email.
 - **[Vercel](https://vercel.com)** — hosting.
