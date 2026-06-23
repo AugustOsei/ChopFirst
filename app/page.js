@@ -1123,6 +1123,9 @@ function LandingPage({ challenge, onStart, onGuide, onBoard, onFeedback, onChang
         </div>
         <div className="hero-scrim" />
         <div className="hero-inner">
+          <h1 className="sr-only">
+            CHOP FIRST — a free, vibecoded browser car racing game set on a mountain touge and the streets of Accra, Ghana.
+          </h1>
           <p className="eyebrow title-fade" style={{ animationDelay: ".15s" }}>24-hour touge time attack</p>
           <div className="brand-logo hero-logo" aria-label="CHOP FIRST">
             <span className="brand-chop logo-pop">CHOP</span>
