@@ -34,6 +34,7 @@ export const metadata = {
   authors: [{ name: "Augustine Osei", url: "https://www.augustwheel.com" }],
   creator: "Augustine Osei",
   alternates: { canonical: "/" },
+  verification: { google: "CD-E2u3Vv21vNedhM6opHx5uCjvrsdQ8Bt6rOUOpGXk" },
   openGraph: {
     title: "CHOP FIRST — Free Browser Car Racing Game (Ghana)",
     description:
