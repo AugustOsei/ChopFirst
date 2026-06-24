@@ -90,6 +90,12 @@ export const TIME_THEMES = {
   },
 };
 
+// Height of the surrounding meadow for the mountain track. The road only climbs
+// ~3m across the lap, so the ground sits just below the lowest shoulder edge and
+// the forest/rocks are planted on it — otherwise scenery floats at road height
+// over a distant plane and the road looks like it's hanging in mid-air.
+const GROUND_Y = -1.0;
+
 export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", trackId = "akina-ridge", onFinish, onQuit, onRestart, onReady }) {
   // Activate the chosen track before the scene geometry and vehicle are built
   // from it below (this component renders before its RaceScene child).
@@ -547,6 +553,7 @@ function TrackWorld() {
       ) : (
         <>
           <Forest />
+          <GroundCover />
           <Rocks />
         </>
       )}
@@ -558,15 +565,23 @@ function TrackWorld() {
         <BrakeBoard key={board.key} position={board.position} yaw={board.yaw} count={board.count} />
       ))}
       {!isCity && mountains.map((mountain) => (
-        <mesh key={mountain.key} position={mountain.position} scale={[mountain.scale * 1.5, mountain.scale, mountain.scale * 1.5]}>
-          <coneGeometry args={[1, 1.6, 6]} />
-          <meshStandardMaterial color={mountain.color} roughness={1} />
-        </mesh>
+        <group key={mountain.key} position={mountain.position}>
+          <mesh scale={[mountain.scale * 1.5, mountain.scale, mountain.scale * 1.5]}>
+            <coneGeometry args={[1, 1.6, 10]} />
+            <meshStandardMaterial color={mountain.color} roughness={1} flatShading />
+          </mesh>
+          {mountain.snow && (
+            <mesh position={[0, mountain.scale * 0.45, 0]} scale={[mountain.scale * 0.68, mountain.scale * 0.46, mountain.scale * 0.68]}>
+              <coneGeometry args={[1, 1.6, 10]} />
+              <meshStandardMaterial color="#eef3f7" roughness={0.85} flatShading />
+            </mesh>
+          )}
+        </group>
       ))}
       <Clouds />
-      <mesh receiveShadow position={[TRACK.center.x, isCity ? -0.05 : -26, TRACK.center.z]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh receiveShadow position={[TRACK.center.x, isCity ? -0.05 : GROUND_Y, TRACK.center.z]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[1600, 1600, 1, 1]} />
-        <meshStandardMaterial color={isCity ? "#8a8170" : "#558544"} roughness={1} />
+        <meshStandardMaterial color={isCity ? "#8a8170" : "#4f7e3e"} roughness={1} />
       </mesh>
     </group>
   );
@@ -668,49 +683,175 @@ function Delineators() {
   );
 }
 
-const FOREST_GREENS = ["#21663c", "#2b7a48", "#185a33", "#357d4a", "#14502d"];
-const FOREST_AUTUMN = ["#b5772a", "#c79438"];
+// Broadleaf crowns lean warm-to-cool green; the occasional autumn tree adds
+// warmth. Conifers get their own deeper, bluer greens so the two read apart.
+const FOREST_GREENS = ["#2f7d4a", "#256b3d", "#347b48", "#3c8a52", "#1f5e36", "#42935a"];
+const FOREST_AUTUMN = ["#c8852f", "#b5772a", "#d49a3b"];
+const PINE_GREENS = ["#1f5e38", "#225f33", "#2a6b3e", "#19512e", "#266a3c"];
 
 function Forest() {
   const data = useMemo(() => {
     const dummy = new THREE.Object3D();
     const trunks = [];
-    const canopies = [];
-    const canopyColors = [];
+    const cones = [];
+    const coneColors = [];
+    const blobs = [];
+    const blobColors = [];
     const length = getTrackLength();
-    for (let i = 0; i < 170; i += 1) {
-      const distance = (i / 170) * length;
+    const c = new THREE.Color();
+    const COUNT = 150;
+    for (let i = 0; i < COUNT; i += 1) {
+      const distance = (i / COUNT) * length;
       const frame = getTrackFrame(distance);
-      const side = i % 2 ? 1 : -1;
-      const offset = side * (TRACK.railOffset + 4.6 + ((i * 17) % 11));
-      const pos = frame.position.clone().addScaledVector(frame.normal, offset);
-      if (!isPointClearOfRoad(pos, TRACK.railOffset + 3)) continue;
-      const scale = 0.85 + ((i * 13) % 9) * 0.13;
-      // every fifth tree is a tall, slim pine; the rest keep the rounder shape
-      const slim = i % 5 === 0;
-      const vy = scale * (slim ? 1.75 : 1);
-      const rad = slim ? scale * 0.7 : scale;
-      trunks.push(composeMatrix(dummy, pos.x, pos.y + 0.75 * vy, pos.z, rad, 0, vy));
-      canopies.push(composeMatrix(dummy, pos.x, pos.y + 2.3 * vy, pos.z, rad, (i * 0.7) % Math.PI, vy));
-      // mostly greens with the occasional autumn tree for warmth
-      const autumn = (i * 29) % 17 === 0;
-      canopyColors.push(new THREE.Color(autumn ? FOREST_AUTUMN[i % 2] : FOREST_GREENS[(i * 7) % FOREST_GREENS.length]));
+      // two depth bands per step build a treeline that recedes from the road
+      // instead of a thin single row of cones
+      for (let band = 0; band < 2; band += 1) {
+        const idx = i * 2 + band;
+        const side = idx % 2 ? 1 : -1;
+        const jitter = (idx * 17) % 9;
+        const offset = side * (TRACK.railOffset + 4.4 + band * 9 + jitter);
+        const along = (((idx * 13) % 9) - 4) * 0.8;
+        const pos = frame.position
+          .clone()
+          .addScaledVector(frame.normal, offset)
+          .addScaledVector(frame.tangent, along);
+        if (!isPointClearOfRoad(pos, TRACK.railOffset + 3)) continue;
+        const scale = 0.95 + ((idx * 7) % 10) * 0.12 + band * 0.18;
+        const yaw = (idx * 1.7) % (Math.PI * 2);
+        const broadleaf = (idx * 5) % 7 === 0; // ~1 in 7 is a round broadleaf
+        const autumn = (idx * 29) % 23 === 0;
+
+        if (broadleaf) {
+          // a soft rounded crown built from three overlapping leaf blobs
+          const th = scale * 1.5;
+          trunks.push(composeMatrix(dummy, pos.x, GROUND_Y + th * 0.5, pos.z, scale * 0.55, 0, th));
+          const base = autumn ? FOREST_AUTUMN[idx % 3] : FOREST_GREENS[(idx * 3) % FOREST_GREENS.length];
+          const crownY = GROUND_Y + th + scale * 0.85;
+          const blobSpec = [
+            [0, 0.15, 0, 1.15],
+            [0.72, -0.28, 0.18, 0.82],
+            [-0.55, -0.18, -0.5, 0.78],
+          ];
+          blobSpec.forEach(([dx, dy, dz, s], k) => {
+            dummy.position.set(pos.x + dx * scale, crownY + dy * scale, pos.z + dz * scale);
+            dummy.rotation.set(0, yaw + k * 1.3, k * 0.35);
+            dummy.scale.set(scale * s, scale * s * 0.92, scale * s);
+            dummy.updateMatrix();
+            blobs.push(dummy.matrix.clone());
+            c.set(base);
+            if (k === 0) c.offsetHSL(0, 0, 0.06); // top blob catches the light
+            blobColors.push(c.clone());
+          });
+        } else {
+          // conifer: a slim trunk and three stacked tiers tapering upward
+          const th = scale * 1.6;
+          trunks.push(composeMatrix(dummy, pos.x, GROUND_Y + th * 0.4, pos.z, scale * 0.45, 0, th * 0.8));
+          const base = PINE_GREENS[(idx * 3) % PINE_GREENS.length];
+          const tiers = [
+            [th * 0.5, 1.25, 1.0],
+            [th * 1.0, 0.95, 0.82],
+            [th * 1.42, 0.6, 0.66],
+          ];
+          tiers.forEach(([h, rad, tierY], k) => {
+            dummy.position.set(pos.x, GROUND_Y + h, pos.z);
+            dummy.rotation.set(0, yaw, 0);
+            dummy.scale.set(scale * rad, scale * tierY, scale * rad);
+            dummy.updateMatrix();
+            cones.push(dummy.matrix.clone());
+            c.set(base);
+            c.offsetHSL(0, 0, k * 0.045); // upper tiers a touch brighter
+            coneColors.push(c.clone());
+          });
+        }
+      }
     }
     return {
       trunks,
-      canopies,
-      canopyColors,
-      trunkGeometry: new THREE.CylinderGeometry(0.16, 0.24, 1.6, 6),
-      canopyGeometry: new THREE.ConeGeometry(1.15, 2.6, 7),
+      cones,
+      coneColors,
+      blobs,
+      blobColors,
+      trunkGeometry: new THREE.CylinderGeometry(0.13, 0.2, 1, 6),
+      // flat-shaded cone tiers read as crisp pine boughs
+      coneGeometry: new THREE.ConeGeometry(1, 1.7, 9),
+      // higher-detail icosahedron makes a genuinely round broadleaf crown
+      blobGeometry: new THREE.IcosahedronGeometry(1, 1),
       trunkMaterial: new THREE.MeshStandardMaterial({ color: "#5b3d25", roughness: 1 }),
       // white base so per-instance colors show true
-      canopyMaterial: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.9 }),
+      coneMaterial: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.82, flatShading: true }),
+      blobMaterial: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.85 }),
     };
   }, []);
   return (
     <>
       <Instances matrices={data.trunks} geometry={data.trunkGeometry} material={data.trunkMaterial} castShadow />
-      <Instances matrices={data.canopies} colors={data.canopyColors} geometry={data.canopyGeometry} material={data.canopyMaterial} castShadow />
+      <Instances matrices={data.cones} colors={data.coneColors} geometry={data.coneGeometry} material={data.coneMaterial} castShadow />
+      <Instances matrices={data.blobs} colors={data.blobColors} geometry={data.blobGeometry} material={data.blobMaterial} castShadow />
+    </>
+  );
+}
+
+// Low roadside planting that fills the bare strip between the rail and the
+// treeline — rounded shrubs and brighter fern tufts, lightly scattered.
+const BUSH_GREENS = ["#2c6b3e", "#357d4a", "#235a34", "#3f8a50", "#2a7a44"];
+
+function GroundCover() {
+  const data = useMemo(() => {
+    const dummy = new THREE.Object3D();
+    const bushes = [];
+    const bushColors = [];
+    const ferns = [];
+    const fernColors = [];
+    const length = getTrackLength();
+    const c = new THREE.Color();
+    const COUNT = 280;
+    for (let i = 0; i < COUNT; i += 1) {
+      const distance = (i / COUNT) * length;
+      const frame = getTrackFrame(distance);
+      const side = i % 2 ? 1 : -1;
+      const offset = side * (TRACK.railOffset + 1.3 + ((i * 11) % 7) * 0.5);
+      const along = (((i * 7) % 7) - 3) * 0.7;
+      const pos = frame.position
+        .clone()
+        .addScaledVector(frame.normal, offset)
+        .addScaledVector(frame.tangent, along);
+      if (!isPointClearOfRoad(pos, TRACK.railOffset + 0.7)) continue;
+      if (i % 3 === 0) {
+        const s = 0.5 + ((i * 13) % 6) * 0.13;
+        dummy.position.set(pos.x, pos.y + s * 0.42, pos.z);
+        dummy.rotation.set(0, i * 0.9, 0);
+        dummy.scale.set(s, s * 0.68, s);
+        dummy.updateMatrix();
+        bushes.push(dummy.matrix.clone());
+        c.set(BUSH_GREENS[i % BUSH_GREENS.length]);
+        bushColors.push(c.clone());
+      } else {
+        const s = 0.4 + ((i * 5) % 5) * 0.12;
+        dummy.position.set(pos.x, pos.y + s * 0.55, pos.z);
+        dummy.rotation.set(0, i * 1.3, 0);
+        dummy.scale.set(s, s * 1.7, s);
+        dummy.updateMatrix();
+        ferns.push(dummy.matrix.clone());
+        c.set(BUSH_GREENS[(i * 3) % BUSH_GREENS.length]);
+        c.offsetHSL(0.01, 0.06, 0.07);
+        fernColors.push(c.clone());
+      }
+    }
+    return {
+      bushes,
+      bushColors,
+      ferns,
+      fernColors,
+      bushGeometry: new THREE.IcosahedronGeometry(1, 1),
+      fernGeometry: new THREE.ConeGeometry(0.55, 1, 5),
+      bushMaterial: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.9 }),
+      fernMaterial: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.95, flatShading: true }),
+    };
+  }, []);
+  return (
+    <>
+      <Instances matrices={data.bushes} colors={data.bushColors} geometry={data.bushGeometry} material={data.bushMaterial} castShadow />
+      <Instances matrices={data.ferns} colors={data.fernColors} geometry={data.fernGeometry} material={data.fernMaterial} />
     </>
   );
 }
@@ -727,7 +868,7 @@ function Rocks() {
       const pos = frame.position.clone().addScaledVector(frame.normal, side * (TRACK.railOffset + 3.4 + ((i * 7) % 6)));
       if (!isPointClearOfRoad(pos, TRACK.railOffset + 2.4)) continue;
       const scale = 0.6 + ((i * 11) % 7) * 0.22;
-      matrices.push(composeMatrix(dummy, pos.x, pos.y + scale * 0.4, pos.z, scale, i * 1.3));
+      matrices.push(composeMatrix(dummy, pos.x, GROUND_Y + scale * 0.4, pos.z, scale, i * 1.3));
     }
     return {
       matrices,
@@ -751,7 +892,9 @@ function createMountains() {
       key: `mountain-${i}`,
       scale,
       position: [position.x, position.y, position.z],
-      color: i % 3 === 0 ? "#7c8f80" : i % 3 === 1 ? "#71857c" : "#86997f",
+      // hazy blue-greens so the ridgeline recedes into the sky
+      color: i % 3 === 0 ? "#8aa0a0" : i % 3 === 1 ? "#7d9598" : "#93a89a",
+      snow: scale > 66,
     });
   }
   return items;

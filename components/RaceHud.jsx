@@ -115,7 +115,8 @@ export default function RaceHud({ race, driver, muted, onToggleMute, onPause }) 
 
       {reverseHint && <div className="reverse-hint">Hold <b>BRAKE</b> to reverse out</div>}
 
-      <div className="speedo">
+      <div className={`speedo${boosting ? " boosting" : ""}`} style={{ "--heat": speedHeat }}>
+        <div className="speedo-ticks" aria-hidden />
         <div
           className={`speedo-ring${boosting ? " boosting" : ""}`}
           style={{
