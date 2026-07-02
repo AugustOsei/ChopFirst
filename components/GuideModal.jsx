@@ -9,8 +9,9 @@ export default function GuideModal({ onClose }) {
         <p className="eyebrow">How to play</p>
         <h2 className="guide-title">CHOP FIRST</h2>
         <p className="guide-lede">
-          A 24-hour touge time attack. Race three laps of the mountain sprint, set your time,
-          then send the challenge link to friends — they have 24 hours to chop it.
+          A 24-hour time attack. Race the mountain sprint, the streets of Accra, or the
+          Orbital Highway in space — set your time, then send the challenge link to friends.
+          They have 24 hours to chop it.
         </p>
 
         <section className="guide-section">
@@ -42,7 +43,7 @@ export default function GuideModal({ onClose }) {
         </section>
 
         <section className="guide-section">
-          <h3>On the mountain</h3>
+          <h3>On the road</h3>
           <ul className="guide-tips">
             <li><b>Boost</b> — start with 3 charges; every 15 coins banks another (max 5 stocked). Best on straights; the pips show charges and cooldown.</li>
             <li><b>Drift</b> — hold the handbrake into a corner to slide and build drift score. Counter-steer to recover.</li>

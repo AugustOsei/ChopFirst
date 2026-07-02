@@ -1,7 +1,8 @@
 # CHOP FIRST 🏁
 
-A browser-based arcade touge racer with a 24-hour challenge twist: race three laps down a
-mountain sprint, set your time, then send the link to friends — they have **24 hours to chop it**.
+A browser-based arcade touge racer with a 24-hour challenge twist: race a mountain
+sprint, the streets of Accra, or a neon highway in orbit, set your time, then send
+the link to friends — they have **24 hours to chop it**.
 
 Built with Next.js, React Three Fiber, and a hand-rolled arcade vehicle model.
 The world and effects are procedural Three.js geometry, the cars are lightweight
@@ -17,8 +18,13 @@ for the next drivers on your challenge link.
   into the turn so a tap nudges rather than snaps, while full-lock corners stay sharp.
 - **Four cars, four feels** — Street Coupe, a nimble Ghana Taxi, a heavy slogan-board
   Trotro, and a fast, twitchy blue-flamed Hover Bike; pick yours in driver setup.
+- **Three circuits** — the alpine Akina Ridge Sprint, the Accra City Run traced from
+  real OpenStreetMap geometry, and the Orbital Highway: a flat-out neon expressway
+  looped around a ringed gas giant, under a spiral galaxy and nebula sky, with a
+  per-track magnetic-guideway steering assist tuned for its sustained top speeds.
 - **Times of day** — race the mountain in bright Day, golden Dusk, or moonlit Night;
   Night lights the road with real headlights, glowing tail lights, and a starfield.
+  (The Orbital Highway skips the picker — orbit has one sky: permanent starlight.)
 - **Braking boards** — roadside countdown boards mark the brake points into the
   sharpest corners, so you can learn the line and carry more speed.
 - **Boost** — three charges per run with flames, FOV kick, and screen streaks.
@@ -146,7 +152,7 @@ Created by [Augustine Osei](https://www.linkedin.com/in/augustineosei/) · [augu
 - **[React Three Fiber](https://r3f.docs.pmnd.rs)** / **[Three.js](https://threejs.org)** + **[drei](https://github.com/pmndrs/drei)** — the 3D scene.
 - **[Blender](https://www.blender.org)** — cleaning up and exporting the vehicle models to glTF.
 - **[Higgsfield](https://higgsfield.ai)** — AI-generated landing and promo imagery (`public/`, `promo/`).
-- **Nano Banana** (Google Gemini image model) — the garage backdrop and the Accra circuit cover image.
+- **Nano Banana** (Google Gemini image model) — the garage backdrop and the Accra and Orbital Highway circuit cover images.
 - **[Upstash Redis](https://upstash.com)** / Vercel KV — challenge, leaderboard, and metrics storage.
 - **[Resend](https://resend.com)** — feedback email.
 - **[Vercel](https://vercel.com)** — hosting.

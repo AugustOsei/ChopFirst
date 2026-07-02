@@ -16,7 +16,7 @@ export const metadata = {
   metadataBase: new URL(SITE_URL),
   title: "CHOP FIRST — Free Browser Car Racing Game (Ghana)",
   description:
-    "A free, no-install car racing game you play in your browser. Drift a mountain touge or street-race through Accra, Ghana, set a lap time, and challenge friends to chop it within 24 hours.",
+    "A free, no-install car racing game you play in your browser. Drift a mountain touge, street-race through Accra, Ghana, or go flat-out on a neon space highway. Set a lap time and challenge friends to chop it within 24 hours.",
   keywords: [
     "car racing game",
     "car racing game Ghana",
@@ -26,6 +26,7 @@ export const metadata = {
     "online racing game",
     "drift game",
     "touge",
+    "space racing game",
     "vibecoded game",
     "CHOP FIRST",
     "indie racing game",
@@ -38,13 +39,14 @@ export const metadata = {
   openGraph: {
     title: "CHOP FIRST — Free Browser Car Racing Game (Ghana)",
     description:
-      "Drift a mountain touge or race the streets of Accra, Ghana. Set a time, send the link — friends have 24 hours to chop it. Free, no install.",
+      "Drift a mountain touge, race the streets of Accra, Ghana, or fly a neon highway in orbit. Set a time, send the link — friends have 24 hours to chop it. Free, no install.",
     url: SITE_URL,
     siteName: "CHOP FIRST",
     type: "website",
     locale: "en",
     images: [
       { url: "/cover-accra.jpg", width: 1376, height: 768, alt: "CHOP FIRST — racing through Accra, Ghana" },
+      { url: "/cover-orbital.jpg", width: 1376, height: 768, alt: "CHOP FIRST — the Orbital Highway space circuit" },
     ],
   },
   twitter: {
@@ -64,7 +66,7 @@ const jsonLd = {
   name: "CHOP FIRST",
   alternateName: "CHOP FIRST Car Racing Game",
   description:
-    "A free browser-based arcade car racing game. Drift a mountain touge or street-race through Accra, Ghana, set a lap time, and challenge friends to beat it within 24 hours.",
+    "A free browser-based arcade car racing game. Drift a mountain touge, street-race through Accra, Ghana, or race a neon orbital highway in space. Set a lap time and challenge friends to beat it within 24 hours.",
   url: SITE_URL,
   image: `${SITE_URL}/cover-accra.jpg`,
   genre: ["Racing", "Arcade", "Driving"],

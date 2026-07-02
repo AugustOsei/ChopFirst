@@ -48,7 +48,7 @@ function trackMapPath(controlPoints) {
 
 function TrackCard({ track, selected, onSelect }) {
   const km = (track.totalLength / 1000).toFixed(2);
-  const icon = track.environment === "city" ? "🏙" : "⛰";
+  const icon = track.environment === "city" ? "🏙" : track.environment === "space" ? "🛰" : "⛰";
   return (
     <button type="button" className={`track-card${selected ? " selected" : ""} ${track.environment}`} onClick={onSelect}>
       <div className="track-map">
@@ -489,7 +489,7 @@ export default function Home() {
           const curVeh = driver.vehicle || DEFAULT_VEHICLE;
           const stats = vehicleStats(curVeh);
           const curTrack = TRACK_LIST.find((t) => t.id === selectedTrack) || TRACK_LIST[0];
-          const todLabel = (TOD_OPTIONS.find((o) => o[0] === timeOfDay) || TOD_OPTIONS[0])[1];
+          const todLabel = curTrack?.environment === "space" ? "Orbit" : (TOD_OPTIONS.find((o) => o[0] === timeOfDay) || TOD_OPTIONS[0])[1];
           return (
           <div className="garage-screen">
             <div className="garage-inner">
@@ -605,19 +605,23 @@ export default function Home() {
 
             <div className="tod-select">
               <span className="section-label">Time of day</span>
-              <div className="tod-row">
-                {TOD_OPTIONS.map(([id, label, icon, img]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    className={`tod-card${timeOfDay === id ? " selected" : ""}`}
-                    onClick={() => setTimeOfDay(id)}
-                  >
-                    <img src={img} alt="" />
-                    <span>{icon} {label}</span>
-                  </button>
-                ))}
-              </div>
+              {curTrack?.environment === "space" ? (
+                <p className="tod-note">🛰 Low orbit sets its own sky — permanent starlight, no atmosphere to change.</p>
+              ) : (
+                <div className="tod-row">
+                  {TOD_OPTIONS.map(([id, label, icon, img]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`tod-card${timeOfDay === id ? " selected" : ""}`}
+                      onClick={() => setTimeOfDay(id)}
+                    >
+                      <img src={img} alt="" />
+                      <span>{icon} {label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             </div>
@@ -1120,11 +1124,17 @@ function LandingPage({ challenge, onStart, onGuide, onBoard, onFeedback, onChang
         <div className="hero-bg" aria-hidden>
           <img src="/cover.jpg" alt="" className="hero-art is-akina" />
           <img src="/cover-accra.jpg" alt="" className="hero-art is-accra" />
+          {/* portrait phones get a vertical composition — the landscape art
+              crops its planet and galaxy out of a tall viewport */}
+          <picture>
+            <source media="(max-width: 760px)" srcSet="/cover-orbital-mobile.jpg" />
+            <img src="/cover-orbital.jpg" alt="" className="hero-art is-orbital" />
+          </picture>
         </div>
         <div className="hero-scrim" />
         <div className="hero-inner">
           <h1 className="sr-only">
-            CHOP FIRST — a free, vibecoded browser car racing game set on a mountain touge and the streets of Accra, Ghana.
+            CHOP FIRST — a free, vibecoded browser car racing game set on a mountain touge, the streets of Accra, Ghana, and a neon orbital highway in space.
           </h1>
           <p className="eyebrow title-fade" style={{ animationDelay: ".15s" }}>24-hour touge time attack</p>
           <div className="brand-logo hero-logo" aria-label="CHOP FIRST">
@@ -1133,7 +1143,7 @@ function LandingPage({ challenge, onStart, onGuide, onBoard, onFeedback, onChang
           </div>
           <div className="brand-strip hero-strip" aria-hidden />
           <p className="hero-tagline title-fade" style={{ animationDelay: ".5s" }}>
-            Pick your ride. Set a blistering time on the mountain or through Accra. Send the link — your friends get 24 hours to chop it, or admit you were faster.
+            Pick your ride. Set a blistering time on the mountain, through Accra or out among the nebulas. Send the link — your friends get 24 hours to chop it, or admit you were faster.
           </p>
           {challenge ? (
             <p className="challenge-pill hero-pill title-fade" style={{ animationDelay: ".65s" }}>
@@ -1164,7 +1174,7 @@ function LandingPage({ challenge, onStart, onGuide, onBoard, onFeedback, onChang
       {/* quick value strip */}
       <div className="value-strip">
         <span><b>4 cars</b> to master</span>
-        <span><b>2 circuits</b> · mountain & city</span>
+        <span><b>3 circuits</b> · mountain, city & orbit</span>
         <span><b>Day · Dusk · Night</b></span>
         <span><b>Real drift physics</b></span>
         <span><b>Ghosts with names</b></span>
@@ -1205,9 +1215,9 @@ function LandingPage({ challenge, onStart, onGuide, onBoard, onFeedback, onChang
           }
         />
         <FeatureRow
-          eyebrow="Two circuits"
-          title="A mountain touge and a run through Accra."
-          body="Carve the alpine Akina Ridge with its summit hairpin and drift chicane, or thread the Accra City Run past flyovers and city landmarks. Same chase-the-ghost rules, two completely different rhythms."
+          eyebrow="Three circuits"
+          title="A mountain touge, the streets of Accra, and a highway in orbit."
+          body="Carve the alpine Akina Ridge with its summit hairpin, thread the Accra City Run past flyovers and landmarks, or go flat-out on the Orbital Highway — a neon expressway orbiting a ringed gas giant under nebula light. Same chase-the-ghost rules, three completely different rhythms."
           media={
             <div className="mock-card mock-circuits">
               {TRACK_LIST.map((t) => (

@@ -212,13 +212,21 @@ export function updateVehicle(car, input, dt) {
     RIDE_HEIGHT,
   } = car.tuning || VEHICLE_TUNING[DEFAULT_VEHICLE];
 
+  // Per-track handling assist. The orbital layout sustains near-top speed,
+  // where the default slow wind-on plus the speed-shrunk lock leaves keyboard
+  // corrections landing a beat late — press, nothing, then too much. Tracks
+  // built for those speeds declare faster turn-in (in-fiction: the guideway's
+  // magnetic assist). Absent the field, every number matches the shipped feel,
+  // so Akina/Accra medals and ghosts stay valid.
+  const handling = TRACK.handling || {};
+
   // left = +steer (+yaw, toward +X); right = -steer. See yaw convention above.
   const steerTarget = (input.left ? 1 : 0) - (input.right ? 1 : 0);
   // Center faster than we wind on, so releasing the stick straightens promptly.
   // Wind-on is deliberately gentle so a tap eases into the turn instead of
   // snapping the wheels over; the max lock below is unchanged, so tight corners
   // are just as takeable — they just take a beat longer to load up.
-  const steerRate = steerTarget === 0 ? 10 : 3.3;
+  const steerRate = steerTarget === 0 ? 10 : handling.steerWindOn ?? 3.3;
   car.steer += (steerTarget - car.steer) * (1 - Math.exp(-dt * steerRate));
   car.throttle += ((input.gas ? 1 : 0) - car.throttle) * (1 - Math.exp(-dt * 8));
   car.brake += ((input.brake ? 1 : 0) - car.brake) * (1 - Math.exp(-dt * 18));
@@ -243,7 +251,8 @@ export function updateVehicle(car, input, dt) {
   // Signed v makes reverse steer like backing a real car (tail swings toward
   // the steered side) with no special casing — do NOT damp this to the road tangent.
   const absFwd = Math.abs(fwd);
-  const lock = MAX_STEER_LOCK / (1 + absFwd * 0.095); // less lock at speed = wider arcs
+  // less lock at speed = wider arcs; assisted tracks shrink it more slowly
+  const lock = MAX_STEER_LOCK / (1 + absFwd * (handling.lockFalloff ?? 0.095));
   let targetYawRate = (fwd / WHEELBASE) * Math.tan(car.steer * lock);
   if (car.drifting) targetYawRate *= 1.3;
   // Rail-escape assist: +steer moves the car toward -lateral, so steer * railSide > 0

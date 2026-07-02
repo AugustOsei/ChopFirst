@@ -90,6 +90,24 @@ export const TIME_THEMES = {
   },
 };
 
+// The orbital track ignores the time-of-day picker: there is no atmosphere to
+// tint, so it always races under this fixed vacuum sky. No fog — fog is an
+// atmospheric effect, and killing it is what lets the distant Earth stay crisp.
+// The sun is a single harsh white key (vacuum light has no scatter to soften it)
+// with a faint violet hemisphere standing in for nebula- and planet-shine.
+const SPACE_THEME = {
+  label: "Orbit",
+  background: "#050414",
+  fog: null,
+  hemisphere: ["#54468f", "#0a0716", 0.45],
+  ambient: 0.18,
+  sun: { position: [-160, 90, -60], color: "#ffffff", intensity: 1.5 },
+  sky: null,
+  stars: false, // the space backdrop draws its own, denser starfield
+  space: true,
+  headlights: true,
+};
+
 // Height of the surrounding meadow for the mountain track. The road only climbs
 // ~3m across the lap, so the ground sits just below the lowest shoulder edge and
 // the forest/rocks are planted on it — otherwise scenery floats at road height
@@ -100,7 +118,7 @@ export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", 
   // Activate the chosen track before the scene geometry and vehicle are built
   // from it below (this component renders before its RaceScene child).
   setActiveTrack(trackId);
-  const theme = TIME_THEMES[timeOfDay] || TIME_THEMES.day;
+  const theme = TRACK.environment === "space" ? SPACE_THEME : TIME_THEMES[timeOfDay] || TIME_THEMES.day;
   const inputRef = useRef({ left: false, right: false, gas: false, brake: false, handbrake: false, boost: false });
   const [race, setRace] = useState(INITIAL_RACE);
   const [showDebug, setShowDebug] = useState(false);
@@ -144,9 +162,9 @@ export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", 
 
   return (
     <>
-      <Canvas className="race-canvas" camera={{ position: [0, 8, 14], fov: 58, near: 0.1, far: 1100 }}>
+      <Canvas className="race-canvas" camera={{ position: [0, 8, 14], fov: 58, near: 0.1, far: 2000 }}>
         <color attach="background" args={[theme.background]} />
-        <fog attach="fog" args={theme.fog} />
+        {theme.fog && <fog attach="fog" args={theme.fog} />}
         <hemisphereLight args={theme.hemisphere} />
         <ambientLight intensity={theme.ambient} />
         <directionalLight position={theme.sun.position} intensity={theme.sun.intensity} color={theme.sun.color} />
@@ -161,6 +179,7 @@ export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", 
             <pointLight position={[140, 150, -260]} color="#cdd9ff" intensity={0.6} distance={0} />
           </>
         )}
+        {theme.space && <SpaceBackdrop />}
         <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} onFinish={onFinish} setRace={setRace} showDebug={showDebug} pausedRef={pausedRef} audio={audio} ghostLabels={ghostLabels} headlights={theme.headlights} onReady={onReady} />
       </Canvas>
       <RaceHud race={race} driver={driver} muted={muted} onToggleMute={() => setMuted((value) => !value)} onPause={() => setPaused(true)} />
@@ -496,48 +515,76 @@ function TrackWorld() {
   const brakeBoards = useMemo(() => createBrakeBoards(), []);
   const mountains = useMemo(() => createMountains(), []);
   const isCity = TRACK.environment === "city";
-  const gateDistance = useMemo(() => (isCity ? longestStraightDistance() : 0), [isCity]);
+  const isSpace = TRACK.environment === "space";
+  const gateDistance = useMemo(() => (isCity || isSpace ? longestStraightDistance() : 0), [isCity, isSpace]);
 
   return (
     <group>
       <mesh receiveShadow geometry={roadGeometry}>
-        <meshStandardMaterial color="#2d3134" roughness={0.94} metalness={0.02} side={THREE.DoubleSide} />
+        {isSpace ? (
+          // dark deck with a faint self-glow so the road silhouette separates
+          // from the void ahead instead of dissolving into it
+          <meshStandardMaterial color="#131a2a" emissive="#0a1226" emissiveIntensity={0.65} roughness={0.5} metalness={0.35} side={THREE.DoubleSide} />
+        ) : (
+          <meshStandardMaterial color="#2d3134" roughness={0.94} metalness={0.02} side={THREE.DoubleSide} />
+        )}
       </mesh>
       <mesh geometry={centerLine}>
-        <meshBasicMaterial color="#ffd45e" side={THREE.DoubleSide} />
+        <meshBasicMaterial color={isSpace ? "#3ff2ff" : "#ffd45e"} side={THREE.DoubleSide} />
       </mesh>
+      {/* in orbit the edge lines are the scenery: magenta left / cyan right so a
+          glance tells you which way you're facing, like port and starboard */}
       <mesh geometry={leftEdge}>
-        <meshBasicMaterial color="#e9edef" side={THREE.DoubleSide} />
+        <meshBasicMaterial color={isSpace ? "#ff4fd8" : "#e9edef"} side={THREE.DoubleSide} />
       </mesh>
       <mesh geometry={rightEdge}>
-        <meshBasicMaterial color="#e9edef" side={THREE.DoubleSide} />
+        <meshBasicMaterial color={isSpace ? "#3ff2ff" : "#e9edef"} side={THREE.DoubleSide} />
       </mesh>
-      <mesh geometry={leftCurbRed}>
-        <meshBasicMaterial color="#cf3a30" side={THREE.DoubleSide} />
-      </mesh>
-      <mesh geometry={leftCurbWhite}>
-        <meshBasicMaterial color="#eef1ef" side={THREE.DoubleSide} />
-      </mesh>
-      <mesh geometry={rightCurbRed}>
-        <meshBasicMaterial color="#cf3a30" side={THREE.DoubleSide} />
-      </mesh>
-      <mesh geometry={rightCurbWhite}>
-        <meshBasicMaterial color="#eef1ef" side={THREE.DoubleSide} />
-      </mesh>
-      <mesh receiveShadow geometry={leftShoulder}>
-        <meshStandardMaterial color={isCity ? "#6f6960" : "#4f7a3c"} roughness={1} />
-      </mesh>
-      <mesh receiveShadow geometry={rightShoulder}>
-        <meshStandardMaterial color={isCity ? "#766f64" : "#578643"} roughness={1} />
-      </mesh>
-      <mesh geometry={leftRail}>
-        <meshStandardMaterial color="#cfd9dd" metalness={0.55} roughness={0.32} side={THREE.DoubleSide} />
-      </mesh>
-      <mesh geometry={rightRail}>
-        <meshStandardMaterial color="#cfd9dd" metalness={0.55} roughness={0.32} side={THREE.DoubleSide} />
-      </mesh>
-      <RailPosts />
-      <Delineators />
+      {!isSpace && (
+        <>
+          <mesh geometry={leftCurbRed}>
+            <meshBasicMaterial color="#cf3a30" side={THREE.DoubleSide} />
+          </mesh>
+          <mesh geometry={leftCurbWhite}>
+            <meshBasicMaterial color="#eef1ef" side={THREE.DoubleSide} />
+          </mesh>
+          <mesh geometry={rightCurbRed}>
+            <meshBasicMaterial color="#cf3a30" side={THREE.DoubleSide} />
+          </mesh>
+          <mesh geometry={rightCurbWhite}>
+            <meshBasicMaterial color="#eef1ef" side={THREE.DoubleSide} />
+          </mesh>
+          <mesh receiveShadow geometry={leftShoulder}>
+            <meshStandardMaterial color={isCity ? "#6f6960" : "#4f7a3c"} roughness={1} />
+          </mesh>
+          <mesh receiveShadow geometry={rightShoulder}>
+            <meshStandardMaterial color={isCity ? "#766f64" : "#578643"} roughness={1} />
+          </mesh>
+        </>
+      )}
+      {isSpace ? (
+        <>
+          {/* the guard rails become light walls — same collision geometry the
+              cushion physics already uses, drawn as additive glow */}
+          <mesh geometry={leftRail}>
+            <meshBasicMaterial color="#ff5ad2" transparent opacity={0.55} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
+          </mesh>
+          <mesh geometry={rightRail}>
+            <meshBasicMaterial color="#59e8ff" transparent opacity={0.55} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
+          </mesh>
+        </>
+      ) : (
+        <>
+          <mesh geometry={leftRail}>
+            <meshStandardMaterial color="#cfd9dd" metalness={0.55} roughness={0.32} side={THREE.DoubleSide} />
+          </mesh>
+          <mesh geometry={rightRail}>
+            <meshStandardMaterial color="#cfd9dd" metalness={0.55} roughness={0.32} side={THREE.DoubleSide} />
+          </mesh>
+        </>
+      )}
+      {!isSpace && <RailPosts />}
+      {!isSpace && <Delineators />}
       {isCity ? (
         <>
           <CityBuildings />
@@ -552,6 +599,13 @@ function TrackWorld() {
           <BlackStarGate distance={gateDistance} />
           <CityLandmarks />
         </>
+      ) : isSpace ? (
+        <>
+          <SpaceDeck />
+          <SpaceSatellites />
+          <SpaceDebris />
+          <OrbitalGate distance={gateDistance} />
+        </>
       ) : (
         <>
           <Forest />
@@ -559,14 +613,14 @@ function TrackWorld() {
           <Rocks />
         </>
       )}
-      <Grandstand />
+      {!isSpace && <Grandstand />}
       {curveMarkers.map((marker) => (
         <CurveMarker key={marker.key} position={marker.position} yaw={marker.yaw} direction={marker.direction} />
       ))}
       {brakeBoards.map((board) => (
         <BrakeBoard key={board.key} position={board.position} yaw={board.yaw} count={board.count} />
       ))}
-      {!isCity && mountains.map((mountain) => (
+      {!isCity && !isSpace && mountains.map((mountain) => (
         <group key={mountain.key} position={mountain.position}>
           <mesh scale={[mountain.scale * 1.5, mountain.scale, mountain.scale * 1.5]}>
             <coneGeometry args={[1, 1.6, 10]} />
@@ -580,11 +634,13 @@ function TrackWorld() {
           )}
         </group>
       ))}
-      <Clouds />
-      <mesh receiveShadow position={[TRACK.center.x, isCity ? -0.05 : GROUND_Y, TRACK.center.z]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[1600, 1600, 1, 1]} />
-        <meshStandardMaterial color={isCity ? "#8a8170" : "#4f7e3e"} roughness={1} />
-      </mesh>
+      {!isSpace && <Clouds />}
+      {!isSpace && (
+        <mesh receiveShadow position={[TRACK.center.x, isCity ? -0.05 : GROUND_Y, TRACK.center.z]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[1600, 1600, 1, 1]} />
+          <meshStandardMaterial color={isCity ? "#8a8170" : "#4f7e3e"} roughness={1} />
+        </mesh>
+      )}
     </group>
   );
 }
@@ -609,6 +665,434 @@ function Clouds() {
       <meshStandardMaterial color="#fbfdff" roughness={1} transparent opacity={0.88} />
     </mesh>
   ));
+}
+
+/* ------------------------------ orbital highway ---------------------------- */
+
+// Soft painterly nebula: layered low-alpha radial gradients in the given tints
+// (each "r,g,b"), with a sprinkle of bright pinpoints kept inside the glow so
+// the square of the billboard never shows.
+function makeNebulaTexture(tints, seed = 1) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d");
+  let s = seed;
+  const rand = () => {
+    s = (s * 16807) % 2147483647;
+    return s / 2147483647;
+  };
+  ctx.globalCompositeOperation = "lighter";
+  for (let i = 0; i < 36; i += 1) {
+    const x = 128 + (rand() - 0.5) * 110;
+    const y = 128 + (rand() - 0.5) * 110;
+    const r = 20 + rand() * 58;
+    const tint = tints[i % tints.length];
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `rgba(${tint},${0.12 + rand() * 0.14})`);
+    g.addColorStop(1, `rgba(${tint},0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 256, 256);
+  }
+  for (let i = 0; i < 46; i += 1) {
+    const x = 128 + (rand() - 0.5) * 130;
+    const y = 128 + (rand() - 0.5) * 130;
+    ctx.fillStyle = `rgba(255,255,255,${0.25 + rand() * 0.6})`;
+    ctx.fillRect(x, y, rand() > 0.82 ? 2 : 1, 1);
+  }
+  // circular falloff mask so the glow always dies out well before the edge of
+  // the canvas — otherwise the square billboard shows as a hard line in the sky
+  ctx.globalCompositeOperation = "destination-in";
+  const mask = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  mask.addColorStop(0, "rgba(255,255,255,1)");
+  mask.addColorStop(0.62, "rgba(255,255,255,0.85)");
+  mask.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = mask;
+  ctx.fillRect(0, 0, 256, 256);
+  return new THREE.CanvasTexture(canvas);
+}
+
+// A two-armed spiral galaxy. High-res canvas with thousands of fine dots —
+// big soft blobs magnify into smoke when the billboard fills the sky, so the
+// arms must be built from star-sized points over a faint elliptical haze.
+function makeGalaxyTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext("2d");
+  let s = 7;
+  const rand = () => {
+    s = (s * 16807) % 2147483647;
+    return s / 2147483647;
+  };
+  ctx.globalCompositeOperation = "lighter";
+  // faint squashed disc haze under the arms so the spiral reads as one body
+  ctx.save();
+  ctx.translate(256, 256);
+  ctx.scale(1, 0.88);
+  const haze = ctx.createRadialGradient(0, 0, 0, 0, 0, 236);
+  haze.addColorStop(0, "rgba(190,195,240,0.2)");
+  haze.addColorStop(0.55, "rgba(150,160,215,0.09)");
+  haze.addColorStop(1, "rgba(150,160,215,0)");
+  ctx.fillStyle = haze;
+  ctx.fillRect(-256, -256, 512, 512);
+  ctx.restore();
+  const core = ctx.createRadialGradient(256, 256, 0, 256, 256, 64);
+  core.addColorStop(0, "rgba(255,247,232,1)");
+  core.addColorStop(0.35, "rgba(255,226,188,0.6)");
+  core.addColorStop(1, "rgba(255,214,170,0)");
+  ctx.fillStyle = core;
+  ctx.fillRect(0, 0, 512, 512);
+  for (const armOffset of [0, Math.PI]) {
+    // fine bright stars strung along a jittered log spiral
+    for (let i = 0; i < 850; i += 1) {
+      const t = i / 850;
+      const angle = armOffset + t * 3.9 + (rand() - 0.5) * 0.2;
+      const radius = 22 + t * 212 + (rand() - 0.5) * (26 - t * 14);
+      const x = 256 + Math.cos(angle) * radius;
+      const y = 256 + Math.sin(angle) * radius * 0.88;
+      const dot = 0.7 + rand() * 1.9 * (1 - t * 0.45);
+      const blue = rand() > 0.68;
+      const alpha = (0.5 + rand() * 0.35) * (1 - t * 0.7);
+      const g = ctx.createRadialGradient(x, y, 0, x, y, dot);
+      g.addColorStop(0, blue ? `rgba(160,198,255,${alpha})` : `rgba(244,246,255,${alpha})`);
+      g.addColorStop(1, "rgba(200,220,255,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(x - dot, y - dot, dot * 2, dot * 2);
+    }
+    // sparse soft clumps give the arms their milky glow without going smoky
+    for (let i = 0; i < 60; i += 1) {
+      const t = i / 60;
+      const angle = armOffset + t * 3.9 + (rand() - 0.5) * 0.14;
+      const radius = 26 + t * 205 + (rand() - 0.5) * 14;
+      const x = 256 + Math.cos(angle) * radius;
+      const y = 256 + Math.sin(angle) * radius * 0.88;
+      const clump = 7 + rand() * 12;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, clump);
+      g.addColorStop(0, `rgba(170,195,250,${0.1 * (1 - t * 0.6)})`);
+      g.addColorStop(1, "rgba(170,195,250,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 512, 512);
+    }
+  }
+  return new THREE.CanvasTexture(canvas);
+}
+
+// Latitude bands for a gas giant: a vertical gradient wrapped onto the sphere's
+// default equirectangular UVs.
+function makeBandsTexture(stops) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 8;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  const g = ctx.createLinearGradient(0, 0, 0, 128);
+  stops.forEach(([at, color]) => g.addColorStop(at, color));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 8, 128);
+  return new THREE.CanvasTexture(canvas);
+}
+
+const GAS_GIANT_BANDS = [
+  [0, "#e9dcbc"], [0.14, "#d9b98a"], [0.24, "#c98f5f"], [0.33, "#e3cfa5"],
+  [0.45, "#b87a4e"], [0.52, "#e8d5ac"], [0.62, "#c2854f"], [0.72, "#e0c79c"],
+  [0.84, "#cd9a66"], [1, "#e6d6b4"],
+];
+const ICE_GIANT_BANDS = [
+  [0, "#cdeef6"], [0.3, "#8fd8ec"], [0.55, "#5db8da"], [0.75, "#a5e2f2"], [1, "#7fcce4"],
+];
+
+// A planet with a tilted ring system, built from concentric flat ring bands so
+// no texture mapping is needed. ringTilt is the rotation of the ring plane.
+function RingedPlanet({ position, radius, bands, rings, ringTilt, emissive = "#241a10" }) {
+  const map = useMemo(() => makeBandsTexture(bands), [bands]);
+  return (
+    <group position={position}>
+      <mesh rotation={[0.12, 0, -0.18]}>
+        <sphereGeometry args={[radius, 36, 26]} />
+        <meshStandardMaterial map={map} roughness={1} emissive={emissive} emissiveIntensity={0.55} />
+      </mesh>
+      <group rotation={ringTilt}>
+        {rings.map(([inner, outer, color, opacity], i) => (
+          <mesh key={i} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[inner, outer, 64]} />
+            <meshBasicMaterial color={color} transparent opacity={opacity} side={THREE.DoubleSide} depthWrite={false} />
+          </mesh>
+        ))}
+      </group>
+    </group>
+  );
+}
+
+// The vacuum sky: a dense starfield, a huge ringed gas giant hanging below the
+// roadway (its limb and ring sweep are what sell "orbit"), a second ringed ice
+// planet and a moon on the horizon, nebulas and a spiral galaxy painted on
+// distant billboards, a harsh little sun and a slowly turning wheel station.
+// Everything is static except the station; parallax from driving does the rest.
+function SpaceBackdrop() {
+  // Nebulosity is background texture, not a light show: three big, faint,
+  // cool-toned washes that keep the sky from being flat black but never
+  // compete with the track's neon. The galaxy is the one bright showpiece.
+  const nebulas = useMemo(() => [
+    { key: "violet", tex: makeNebulaTexture(["150,115,235", "115,100,225", "180,110,230"], 11), pos: [-480, 300, -640], size: 900, opacity: 0.6 },
+    { key: "blue", tex: makeNebulaTexture(["95,140,235", "120,170,245", "105,125,225"], 29), pos: [700, 260, 380], size: 820, opacity: 0.55 },
+    { key: "north", tex: makeNebulaTexture(["150,115,235", "105,140,240", "170,125,225"], 61), pos: [-40, 360, 820], size: 860, opacity: 0.55 },
+  ], []);
+  const galaxy = useMemo(() => makeGalaxyTexture(), []);
+  // pinprick background galaxies: depth for free, no glow
+  const farGalaxies = useMemo(() => [
+    { key: "fg-1", pos: [620, 430, -520], size: 90, rot: [-0.7, 0.5, 1.1] },
+    { key: "fg-2", pos: [-700, 120, -300], size: 70, rot: [-0.2, 0.9, 0.3] },
+    { key: "fg-3", pos: [280, 520, 700], size: 110, rot: [-1.2, 0.2, 0.8] },
+  ], []);
+  const cx = TRACK.center.x;
+  const cz = TRACK.center.z;
+  return (
+    <group>
+      <Stars radius={420} depth={160} count={9000} factor={8} saturation={0} fade speed={0.2} />
+      {/* the headliner: a banded gas giant below the track, rings sweeping up
+          toward the horizon — the diving esses aim straight at it */}
+      <RingedPlanet
+        position={[cx + 260, -420, cz - 320]}
+        radius={340}
+        bands={GAS_GIANT_BANDS}
+        rings={[
+          [400, 470, "#e8d0a8", 0.5],
+          [485, 560, "#caa87f", 0.3],
+          [575, 640, "#f0e2c4", 0.16],
+        ]}
+        ringTilt={[0.42, 0.2, 0.12]}
+      />
+      {/* a far ice giant with a thin bright ring, up on the horizon where it is
+          in view on the climb even before the road tips over the crest */}
+      <RingedPlanet
+        position={[cx - 520, 150, cz + 420]}
+        radius={56}
+        bands={ICE_GIANT_BANDS}
+        rings={[
+          [72, 96, "#dff5ff", 0.45],
+          [102, 112, "#9fdcf2", 0.3],
+        ]}
+        ringTilt={[1.1, 0.4, 0.3]}
+        emissive="#0e2430"
+      />
+      <mesh position={[cx + 430, 230, cz + 520]}>
+        <sphereGeometry args={[30, 18, 14]} />
+        <meshStandardMaterial color="#9aa0ad" roughness={1} flatShading />
+      </mesh>
+      {/* nebulas: camera-facing billboards, additive so they glow over the stars */}
+      {nebulas.map((n) => (
+        <Billboard key={n.key} position={[cx + n.pos[0], n.pos[1], cz + n.pos[2]]}>
+          <mesh>
+            <planeGeometry args={[n.size, n.size]} />
+            <meshBasicMaterial map={n.tex} transparent opacity={n.opacity} blending={THREE.AdditiveBlending} depthWrite={false} />
+          </mesh>
+        </Billboard>
+      ))}
+      {/* the showpiece: a big tilted spiral galaxy hung west-northwest, dead
+          ahead as the road tips over the crest */}
+      <mesh position={[cx - 620, 400, cz + 340]} rotation={[-0.85, 0.55, 0.4]}>
+        <planeGeometry args={[460, 460]} />
+        <meshBasicMaterial map={galaxy} transparent opacity={0.95} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+      {farGalaxies.map((g) => (
+        <mesh key={g.key} position={[cx + g.pos[0], g.pos[1], cz + g.pos[2]]} rotation={g.rot}>
+          <planeGeometry args={[g.size, g.size]} />
+          <meshBasicMaterial map={galaxy} transparent opacity={0.55} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+      {/* the sun: hard white core, additive halo, matching the key light's angle */}
+      <group position={[-620, 340, -260]}>
+        <mesh>
+          <sphereGeometry args={[18, 20, 20]} />
+          <meshBasicMaterial color="#ffffff" />
+        </mesh>
+        <mesh>
+          <sphereGeometry args={[32, 20, 20]} />
+          <meshBasicMaterial color="#fff3c4" transparent opacity={0.3} blending={THREE.AdditiveBlending} depthWrite={false} />
+        </mesh>
+      </group>
+      <DistantStation />
+    </group>
+  );
+}
+
+// A wheel station turning slowly on the horizon — the one moving thing in the
+// backdrop, so the sky never reads as a painted dome.
+function DistantStation() {
+  const ref = useRef(null);
+  useFrame((_, dt) => {
+    if (ref.current) ref.current.rotation.z += dt * 0.05;
+  });
+  return (
+    <group position={[TRACK.center.x - 420, 190, TRACK.center.z + 520]} rotation={[0.4, 0.7, 0]}>
+      <group ref={ref}>
+        <mesh>
+          <torusGeometry args={[46, 7, 10, 36]} />
+          <meshStandardMaterial color="#9aa7bd" roughness={0.5} metalness={0.6} />
+        </mesh>
+        {[0, 1, 2].map((i) => (
+          <mesh key={i} rotation={[0, 0, (i / 3) * Math.PI]}>
+            <boxGeometry args={[92, 4, 4]} />
+            <meshStandardMaterial color="#7d8aa0" roughness={0.55} metalness={0.6} />
+          </mesh>
+        ))}
+      </group>
+      <mesh>
+        <cylinderGeometry args={[10, 10, 26, 12]} />
+        <meshStandardMaterial color="#b3bfd4" roughness={0.45} metalness={0.65} />
+      </mesh>
+    </group>
+  );
+}
+
+// Structure under the floating roadway: a dark underdeck (so the road has
+// thickness when a crest shows you its underside) and pylon fins hanging below
+// with cyan running lights.
+function SpaceDeck() {
+  const underside = useMemo(() => {
+    const geometry = createRoadGeometry(280);
+    geometry.translate(0, -0.6, 0);
+    return geometry;
+  }, []);
+  const fins = useMemo(() => {
+    const dummy = new THREE.Object3D();
+    const bodies = [];
+    const lights = [];
+    const length = getTrackLength();
+    for (let distance = 0; distance < length; distance += 22) {
+      const frame = getTrackFrame(distance);
+      const p = frame.position;
+      bodies.push(composeMatrix(dummy, p.x, p.y - 1.6, p.z, 1, Math.atan2(frame.tangent.x, frame.tangent.z)));
+      lights.push(composeMatrix(dummy, p.x, p.y - 2.7, p.z, 1));
+    }
+    return {
+      bodies,
+      lights,
+      bodyGeometry: new THREE.BoxGeometry(1.1, 2.4, 0.5),
+      lightGeometry: new THREE.BoxGeometry(0.5, 0.24, 0.24),
+      bodyMaterial: new THREE.MeshStandardMaterial({ color: "#232c42", roughness: 0.6, metalness: 0.4 }),
+      lightMaterial: new THREE.MeshBasicMaterial({ color: "#3ff2ff" }),
+    };
+  }, []);
+  return (
+    <group>
+      <mesh geometry={underside}>
+        <meshStandardMaterial color="#141a29" roughness={0.7} metalness={0.4} side={THREE.DoubleSide} />
+      </mesh>
+      <Instances matrices={fins.bodies} geometry={fins.bodyGeometry} material={fins.bodyMaterial} />
+      <Instances matrices={fins.lights} geometry={fins.lightGeometry} material={fins.lightMaterial} />
+    </group>
+  );
+}
+
+// Service satellites parked off the racing line: a foil body and two panels,
+// scattered at varied heights so the space around the road feels inhabited.
+function SpaceSatellites() {
+  const sats = useMemo(() => {
+    const items = [];
+    const length = getTrackLength();
+    const COUNT = 10;
+    for (let i = 0; i < COUNT; i += 1) {
+      const frame = getTrackFrame((i / COUNT) * length);
+      const side = i % 2 ? 1 : -1;
+      const offset = side * (TRACK.railOffset + 16 + ((i * 19) % 22));
+      const pos = frame.position.clone().addScaledVector(frame.normal, offset);
+      pos.y += 3 + ((i * 13) % 12);
+      if (!isPointClearOfRoad(pos, TRACK.railOffset + 6)) continue;
+      items.push({
+        key: `sat-${i}`,
+        position: [pos.x, pos.y, pos.z],
+        rotation: [((i * 7) % 5) * 0.16, (i * 1.7) % (Math.PI * 2), ((i * 11) % 5) * 0.12],
+        scale: 1 + ((i * 5) % 4) * 0.25,
+      });
+    }
+    return items;
+  }, []);
+  return sats.map((sat) => (
+    <group key={sat.key} position={sat.position} rotation={sat.rotation} scale={sat.scale}>
+      <mesh>
+        <boxGeometry args={[1.3, 1.3, 2.1]} />
+        <meshStandardMaterial color="#c8b45e" roughness={0.35} metalness={0.7} />
+      </mesh>
+      {[-1, 1].map((side) => (
+        <mesh key={side} position={[side * 2.9, 0, 0]}>
+          <boxGeometry args={[4.2, 0.08, 1.7]} />
+          <meshStandardMaterial color="#1d3f8f" roughness={0.3} metalness={0.55} />
+        </mesh>
+      ))}
+      <mesh position={[0, 0.9, -0.4]}>
+        <cylinderGeometry args={[0.05, 0.05, 1.1, 5]} />
+        <meshStandardMaterial color="#dfe6f2" roughness={0.4} metalness={0.6} />
+      </mesh>
+    </group>
+  ));
+}
+
+// Loose rock drifting under and around the roadway — the parallax layer that
+// gives the swoops their sense of height once the ground plane is gone.
+function SpaceDebris() {
+  const { geometry, material, matrices } = useMemo(() => {
+    const dummy = new THREE.Object3D();
+    const matrices = [];
+    const length = getTrackLength();
+    const COUNT = 48;
+    for (let i = 0; i < COUNT; i += 1) {
+      const frame = getTrackFrame((i / COUNT) * length);
+      const side = i % 2 ? 1 : -1;
+      const offset = side * (TRACK.railOffset + 12 + ((i * 23) % 60));
+      const pos = frame.position.clone().addScaledVector(frame.normal, offset);
+      pos.y += -34 + ((i * 17) % 56);
+      if (!isPointClearOfRoad(pos, TRACK.railOffset + 5)) continue;
+      const scale = 0.6 + ((i * 7) % 10) * 0.26;
+      dummy.position.set(pos.x, pos.y, pos.z);
+      dummy.rotation.set((i * 1.3) % Math.PI, (i * 2.1) % Math.PI, (i * 0.7) % Math.PI);
+      dummy.scale.setScalar(scale);
+      dummy.updateMatrix();
+      matrices.push(dummy.matrix.clone());
+    }
+    return {
+      geometry: new THREE.DodecahedronGeometry(1, 0),
+      material: new THREE.MeshStandardMaterial({ color: "#5a6272", roughness: 0.95, flatShading: true }),
+      matrices,
+    };
+  }, []);
+  return <Instances matrices={matrices} geometry={geometry} material={material} />;
+}
+
+// The start-straight set piece: a glowing ring gate spinning slowly around the
+// road, playing the role the Black Star arch plays in Accra.
+function OrbitalGate({ distance }) {
+  const ringRef = useRef(null);
+  useFrame((_, dt) => {
+    if (ringRef.current) ringRef.current.rotation.z += dt * 0.25;
+  });
+  const { pos, yaw } = useMemo(() => {
+    const frame = getTrackFrame(distance);
+    const p = frame.position.clone();
+    return { pos: [p.x, p.y + 3.4, p.z], yaw: Math.atan2(frame.tangent.x, frame.tangent.z) };
+  }, [distance]);
+  return (
+    <group position={pos} rotation={[0, yaw, 0]}>
+      <group ref={ringRef}>
+        <mesh>
+          <torusGeometry args={[9.5, 0.55, 10, 42]} />
+          <meshBasicMaterial color="#59e8ff" transparent opacity={0.85} blending={THREE.AdditiveBlending} depthWrite={false} />
+        </mesh>
+        {[0, 1, 2, 3].map((i) => (
+          <mesh key={i} position={[Math.cos((i / 4) * Math.PI * 2 + 0.4) * 9.5, Math.sin((i / 4) * Math.PI * 2 + 0.4) * 9.5, 0]}>
+            <boxGeometry args={[1.4, 1.4, 1.0]} />
+            <meshStandardMaterial color="#dfe8f5" roughness={0.35} metalness={0.65} />
+          </mesh>
+        ))}
+      </group>
+      {[-1, 1].map((side) => (
+        <mesh key={side} position={[side * 10.6, -1.2, 0]}>
+          <boxGeometry args={[1.6, 4.6, 1.6]} />
+          <meshStandardMaterial color="#232c42" roughness={0.55} metalness={0.5} />
+        </mesh>
+      ))}
+    </group>
+  );
 }
 
 function Instances({ matrices, geometry, material, colors, castShadow = false }) {

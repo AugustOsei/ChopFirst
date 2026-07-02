@@ -132,6 +132,37 @@ function autoCoins() {
   return out;
 }
 
+// --- Orbital Highway: a neon expressway looped in low orbit. Flat-out layout —
+// one huge start straight, a climbing right-hand sweep to a crest high over the
+// Earth, diving esses back down, and a single slow station hairpin. Elevation
+// swings ~15 m (far more than Akina's 3 m) because there is no terrain to
+// ground it — the swoop *is* the scenery.
+const ORBITAL_CONTROL_POINTS = [
+  // start/finish straight
+  [-140, 0.5, 0],
+  [-40, 0.5, 0],
+  [80, 0.5, 2],
+  // sweeping right, climb begins
+  [180, 1.8, 24],
+  [246, 3.8, 86],
+  [266, 6.2, 168],
+  // left sweeper rising to the crest
+  [230, 9.5, 244],
+  [150, 13.0, 288],
+  // the crest — highest point of the lap, Earth filling the view below
+  [48, 15.5, 306],
+  [-48, 15.5, 288],
+  // diving esses
+  [-108, 12.5, 232],
+  [-84, 9.0, 168],
+  [-128, 6.5, 116],
+  // station hairpin (the one slow corner)
+  [-206, 4.2, 84],
+  [-252, 2.8, 24],
+  [-236, 1.6, -46],
+  [-178, 1.0, -64],
+];
+
 const TRACK_DEFS = [
   {
     id: "akina-ridge",
@@ -183,6 +214,37 @@ const TRACK_DEFS = [
       { pct: 0.56, lateral: 0 },
       { pct: 0.72, lateral: -1.4 },
       { pct: 0.88, lateral: 1.4 },
+    ],
+  },
+  {
+    id: "orbital-highway",
+    name: "Orbital Highway",
+    blurb: "A neon expressway orbiting a ringed gas giant — a flat-out climb to a weightless crest, diving esses and one station hairpin.",
+    difficulty: "Flat-out",
+    laps: 3,
+    // Calibrated from the headless proportional bot (160.3 s for 3 laps, clean,
+    // with the guideway steering assist) using the Akina ratios: gold ≈ bot
+    // time, silver ×1.04, bronze ×1.43.
+    medals: { bronze: 229500, silver: 167000, gold: 160500 },
+    width: 11,
+    railOffset: 6.4,
+    startDistance: 60,
+    center: { x: 10, z: 120 },
+    tension: 0.18,
+    environment: "space",
+    // Magnetic-guideway steering assist: this layout is driven at near-top
+    // speed, where the default wind-on + lock falloff feels laggy on keys.
+    // Faster turn-in, gentler lock shrink — see updateVehicle in vehicle.js.
+    handling: { steerWindOn: 5.5, lockFalloff: 0.07 },
+    controlPoints: ORBITAL_CONTROL_POINTS,
+    coins: autoCoins(),
+    // Stars sit on the flow points: the launch straight, the climb, the exit of
+    // the diving esses, and the run home out of the hairpin.
+    boostStars: [
+      { pct: 0.04, lateral: 0 },
+      { pct: 0.34, lateral: 0 },
+      { pct: 0.62, lateral: -0.9 },
+      { pct: 0.88, lateral: 0 },
     ],
   },
 ];
