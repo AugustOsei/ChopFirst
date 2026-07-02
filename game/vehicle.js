@@ -221,7 +221,7 @@ export function updateVehicle(car, input, dt) {
   const steerRate = steerTarget === 0 ? 10 : 3.3;
   car.steer += (steerTarget - car.steer) * (1 - Math.exp(-dt * steerRate));
   car.throttle += ((input.gas ? 1 : 0) - car.throttle) * (1 - Math.exp(-dt * 8));
-  car.brake += ((input.brake ? 1 : 0) - car.brake) * (1 - Math.exp(-dt * 10));
+  car.brake += ((input.brake ? 1 : 0) - car.brake) * (1 - Math.exp(-dt * 18));
   const handbrake = input.handbrake ? 1 : 0;
 
   if (input.boost && car.boostCharges > 0 && car.boostCooldown <= 0 && car.forwardSpeed > 5) {

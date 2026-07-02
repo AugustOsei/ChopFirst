@@ -257,8 +257,10 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
     countdownRef.current = Math.max(-1, countdownRef.current - dt);
     if (countdownRef.current <= 0) {
       const input = inputRef.current;
-      // auto-throttle yields to the brake so braking and reversing still work
-      updateVehicle(car, input.autoGas && !input.brake ? { ...input, gas: true } : input, dt);
+      // auto-throttle yields to brake and to sustained reverse so releasing the
+      // brake button doesn't instantly cancel a reverse that's already built up
+      const autoGasActive = input.autoGas && !input.brake && car.forwardSpeed > -1.5;
+      updateVehicle(car, autoGasActive ? { ...input, gas: true } : input, dt);
     }
     const transform = getVehicleTransform(car);
 
