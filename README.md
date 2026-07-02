@@ -22,6 +22,10 @@ for the next drivers on your challenge link.
   real OpenStreetMap geometry, and the Orbital Highway: a flat-out neon expressway
   looped around a ringed gas giant, under a spiral galaxy and nebula sky, with a
   per-track magnetic-guideway steering assist tuned for its sustained top speeds.
+- **Laser cannon & asteroids** — the Orbital Highway seeds the racing line with
+  asteroids: blast them with the hitscan laser (`F`/`X`, or the FIRE touch button)
+  or shatter one against the car and lose most of your speed. The field is fixed
+  and respawns per lap like coins, so leaderboard times stay comparable.
 - **Times of day** — race the mountain in bright Day, golden Dusk, or moonlit Night;
   Night lights the road with real headlights, glowing tail lights, and a starfield.
   (The Orbital Highway skips the picker — orbit has one sky: permanent starlight.)
@@ -51,6 +55,7 @@ for the next drivers on your challenge link.
 | Steer | `A` `D` / `←` `→` | ‹ › |
 | Drift (handbrake) | `Shift` | DRIFT |
 | Boost | `Space` | BOOST |
+| Fire laser (space track) | `F` / `X` | FIRE |
 | Pause | `Esc` / `P` | ❚❚ |
 | Debug overlay | `F3` | — |
 

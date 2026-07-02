@@ -651,6 +651,7 @@ export default function Home() {
               <span>Coins <b>{result.coins}</b></span>
               <span>Drift <b>{result.driftScore}</b></span>
               <span>Boosts used <b>{result.boostUses}</b></span>
+              {TRACK.hazards?.length > 0 && <span>Asteroids <b>{result.blasts || 0}</b></span>}
             </div>
 
             <div className={`save-bar ${saveState}`} aria-live="polite">

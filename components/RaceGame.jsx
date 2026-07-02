@@ -16,6 +16,7 @@ import {
   createStripGeometry,
   getTrackFrame,
   getTrackLength,
+  HAZARDS,
   isPointClearOfRoad,
   MINIMAP,
   PICKUPS,
@@ -119,7 +120,7 @@ export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", 
   // from it below (this component renders before its RaceScene child).
   setActiveTrack(trackId);
   const theme = TRACK.environment === "space" ? SPACE_THEME : TIME_THEMES[timeOfDay] || TIME_THEMES.day;
-  const inputRef = useRef({ left: false, right: false, gas: false, brake: false, handbrake: false, boost: false });
+  const inputRef = useRef({ left: false, right: false, gas: false, brake: false, handbrake: false, boost: false, fire: false });
   const [race, setRace] = useState(INITIAL_RACE);
   const [showDebug, setShowDebug] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -183,7 +184,7 @@ export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", 
         <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} onFinish={onFinish} setRace={setRace} showDebug={showDebug} pausedRef={pausedRef} audio={audio} ghostLabels={ghostLabels} headlights={theme.headlights} onReady={onReady} />
       </Canvas>
       <RaceHud race={race} driver={driver} muted={muted} onToggleMute={() => setMuted((value) => !value)} onPause={() => setPaused(true)} />
-      <TouchControls controlsRef={inputRef} boosts={race.boosts} />
+      <TouchControls controlsRef={inputRef} boosts={race.boosts} lasers={HAZARDS.length > 0} />
       {paused && !showGuide && (
         <PauseOverlay
           onResume={() => setPaused(false)}
@@ -210,11 +211,13 @@ function PauseOverlay({ onResume, onGuide, onQuit, onRestart, ghostLabels, onTog
           <ul className="pause-hints">
             <li>Auto-throttle — corners steer, one thumb each</li>
             <li>Hold <b>DRIFT</b> with your free thumb · tap the <b>tank</b> to boost · hold <b>BRAKE</b> to stop, keep holding to reverse</li>
+            {HAZARDS.length > 0 && <li>Tap <b>FIRE</b> to blast asteroids off the road</li>}
           </ul>
         ) : (
           <ul className="pause-hints">
             <li><kbd>W</kbd>/<kbd>↑</kbd> gas · <kbd>S</kbd>/<kbd>↓</kbd> brake &amp; reverse</li>
             <li><kbd>Shift</kbd> drift · <kbd>Space</kbd> boost · <kbd>Esc</kbd> pause · <kbd>R</kbd> restart</li>
+            {HAZARDS.length > 0 && <li><kbd>F</kbd>/<kbd>X</kbd> fire the laser — blast asteroids before you hit them</li>}
           </ul>
         )}
         <button className="primary" onClick={onResume}>Resume</button>
@@ -238,7 +241,7 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
     () => (challenge?.messages || []).filter((note) => note.message).slice(-8),
     [challenge],
   );
-  const flowRef = useRef({ lastLap: 0, banner: null, msgIndex: 0, msg: null, wrongWayTime: 0, lastBoostsEarned: 0, lastStarsHit: 0 });
+  const flowRef = useRef({ lastLap: 0, banner: null, msgIndex: 0, msg: null, wrongWayTime: 0, lastBoostsEarned: 0, lastStarsHit: 0, lastBlastEvents: 0 });
   const smokeRef = useRef(null);
   const sparksRef = useRef(null);
   const skidRef = useRef(null);
@@ -299,6 +302,22 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
     if (car.starsHit > flow.lastStarsHit) {
       flow.lastStarsHit = car.starsHit;
       flow.banner = { id: `star-${car.starsHit}`, text: "★ BOOST FULL", until: car.timeMs + 1600 };
+    }
+    // Asteroid destruction burst — one per blast event, at the rock, whether
+    // it was shot cleanly or shattered against the car.
+    if (car.blastEvents > flow.lastBlastEvents && car.lastBlast) {
+      flow.lastBlastEvents = car.blastEvents;
+      const at = new THREE.Vector3(car.lastBlast.x, car.lastBlast.y, car.lastBlast.z);
+      const sparks = sparksRef.current;
+      const smoke = smokeRef.current;
+      for (let i = 0; i < 16 && sparks; i += 1) {
+        const vel = new THREE.Vector3((Math.random() - 0.5) * 9, 1.5 + Math.random() * 5, (Math.random() - 0.5) * 9);
+        sparks.spawn(at, vel, 0.5 + Math.random() * 0.6);
+      }
+      for (let i = 0; i < 5 && smoke; i += 1) {
+        const vel = new THREE.Vector3((Math.random() - 0.5) * 2.4, 0.8 + Math.random() * 1.6, (Math.random() - 0.5) * 2.4);
+        smoke.spawn(at, vel, 0.7 + Math.random() * 0.5);
+      }
     }
     if (flow.msgIndex < roadMessages.length) {
       const total = Math.min(1, raceProgress(car, trackLength) / (TRACK.laps * trackLength));
@@ -365,6 +384,7 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
         coins: car.coins.size,
         driftScore: Math.round(car.driftScore),
         boostUses: car.boostUses,
+        blasts: car.blasts,
         ghost: decimateGhost(car.ghost, 500),
       });
     }
@@ -376,6 +396,12 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
       <StartGantry countdownRef={countdownRef} />
       <Pickups collected={car.coins} lap={Math.min(TRACK.laps - 1, car.lap)} />
       <BoostStars collected={car.stars} lap={Math.min(TRACK.laps - 1, car.lap)} />
+      {HAZARDS.length > 0 && (
+        <>
+          <SpaceHazards blasted={car.blasted} lap={Math.min(TRACK.laps - 1, car.lap)} />
+          <LaserFX car={car} />
+        </>
+      )}
       <Ghosts challenge={challenge} pbRun={pbRun} car={car} showLabels={ghostLabels} />
       <RaceCar ref={carRef} carState={car} color={driver?.color} headlights={headlights} vehicle={driver?.vehicle || "street"} />
       <Particles ref={smokeRef} mode="smoke" count={70} />
@@ -3167,6 +3193,90 @@ function BoostStar({ position }) {
   );
 }
 
+// Asteroid hazards on the road — same lap-scoped respawn contract as coins.
+// A dim warning glow underneath makes them readable against the dark deck
+// from laser range.
+function SpaceHazards({ blasted, lap }) {
+  return HAZARDS.map((rock, index) => {
+    if (blasted.has(lap * 1000 + index)) return null;
+    const position = pointAt(rock.distance, rock.lateral);
+    position.y += rock.scale * 0.75;
+    return <Asteroid key={index} position={position} scale={rock.scale} seed={index} />;
+  });
+}
+
+function Asteroid({ position, scale, seed }) {
+  const ref = useRef(null);
+  useFrame((_, delta) => {
+    if (!ref.current) return;
+    ref.current.rotation.y += delta * (0.5 + (seed % 3) * 0.25);
+    ref.current.rotation.x += delta * 0.2;
+  });
+  return (
+    <group position={position}>
+      <mesh ref={ref} rotation={[(seed * 1.3) % Math.PI, (seed * 2.1) % Math.PI, 0]} scale={scale}>
+        <dodecahedronGeometry args={[1, 0]} />
+        <meshStandardMaterial color="#7d6a58" roughness={0.95} flatShading emissive="#3a1608" emissiveIntensity={0.35} />
+      </mesh>
+      <mesh position={[0, -scale * 0.55, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[scale * 0.9, scale * 1.5, 24]} />
+        <meshBasicMaterial color="#ff5a3c" transparent opacity={0.3} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+    </group>
+  );
+}
+
+// The laser bolt: a white-hot core inside a magenta glow, stretched between
+// the muzzle and the hit point (or max range). Reads car.laserBeam, which
+// updateVehicle keeps alive for ~0.12s per shot.
+function LaserFX({ car }) {
+  const coreRef = useRef(null);
+  const glowRef = useRef(null);
+  const from = useMemo(() => new THREE.Vector3(), []);
+  const to = useMemo(() => new THREE.Vector3(), []);
+  const mid = useMemo(() => new THREE.Vector3(), []);
+  const dir = useMemo(() => new THREE.Vector3(), []);
+  const up = useMemo(() => new THREE.Vector3(0, 1, 0), []);
+  const quat = useMemo(() => new THREE.Quaternion(), []);
+  useFrame(() => {
+    const core = coreRef.current;
+    const glow = glowRef.current;
+    if (!core || !glow) return;
+    const beam = car.laserBeam;
+    if (!beam) {
+      core.visible = false;
+      glow.visible = false;
+      return;
+    }
+    from.set(beam.from.x, beam.from.y, beam.from.z);
+    to.set(beam.to.x, beam.to.y, beam.to.z);
+    mid.addVectors(from, to).multiplyScalar(0.5);
+    dir.subVectors(to, from);
+    const length = Math.max(0.1, dir.length());
+    quat.setFromUnitVectors(up, dir.normalize());
+    const fade = Math.max(0, beam.ttl / 0.12);
+    for (const [mesh, radius, opacity] of [[core, 0.07, 0.95], [glow, 0.22, 0.4]]) {
+      mesh.visible = true;
+      mesh.position.copy(mid);
+      mesh.quaternion.copy(quat);
+      mesh.scale.set(radius, length, radius);
+      mesh.material.opacity = opacity * fade;
+    }
+  });
+  return (
+    <>
+      <mesh ref={coreRef} visible={false} frustumCulled={false}>
+        <cylinderGeometry args={[1, 1, 1, 6, 1, true]} />
+        <meshBasicMaterial color="#ffffff" transparent depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+      </mesh>
+      <mesh ref={glowRef} visible={false} frustumCulled={false}>
+        <cylinderGeometry args={[1, 1, 1, 6, 1, true]} />
+        <meshBasicMaterial color="#ff3ec8" transparent depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+      </mesh>
+    </>
+  );
+}
+
 function Ghosts({ challenge, pbRun, car, showLabels }) {
   // runs without a usable trace (legacy/pre-validator data) can't be replayed
   const runs = (challenge?.runs || []).filter((run) => run.ghost?.length > 1).slice(0, 2);
@@ -3377,7 +3487,7 @@ function BoostTank({ boosts }) {
 // bottom corner so each thumb owns a direction. DRIFT is mirrored above both
 // zones (it's held *while* steering, so it must be reachable by whichever
 // thumb is free). Boost tank + brake bar sit center, out of fat-finger range.
-function TouchControls({ controlsRef, boosts }) {
+function TouchControls({ controlsRef, boosts, lasers }) {
   const padRef = useRef(null);
 
   useEffect(() => {
@@ -3451,6 +3561,12 @@ function TouchControls({ controlsRef, boosts }) {
           <BoostTank boosts={boosts} />
           <b>×{boosts}</b>
         </button>
+        {lasers && (
+          <button type="button" className="t-fire" aria-label="Fire laser" data-control="fire">
+            <span className="t-fire-icon">◎</span>
+            <span>FIRE</span>
+          </button>
+        )}
         <button type="button" className="t-brake" aria-label="Brake, hold to reverse" data-control="brake">
           <BrakeIcon />
           <span>BRAKE</span>
@@ -3504,4 +3620,5 @@ function setKey(input, event, value) {
   if (key === "arrowdown" || key === "s") input.brake = value;
   if (key === "shift") input.handbrake = value;
   if (event.key === " ") input.boost = value;
+  if (key === "f" || key === "x") input.fire = value;
 }

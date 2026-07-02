@@ -14,6 +14,8 @@ export function createGameAudio() {
   let muted = false;
   let lastBoostTimer = 0;
   let lastCoins = 0;
+  let lastShots = 0;
+  let lastBlastEvents = 0;
 
   function ensure() {
     if (ctx) return true;
@@ -92,6 +94,58 @@ export function createGameAudio() {
     if (car.coins.size > lastCoins) coinBlip();
     lastCoins = car.coins.size;
     if (car.impact > 0.45) thud(car.impact);
+    if ((car.shots || 0) > lastShots) laserZap();
+    lastShots = car.shots || 0;
+    if ((car.blastEvents || 0) > lastBlastEvents) rockBoom();
+    lastBlastEvents = car.blastEvents || 0;
+  }
+
+  // laser: a fast downward pitch sweep on a square wave — classic arcade pew
+  function laserZap() {
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = "square";
+    osc.frequency.setValueAtTime(1750, t);
+    osc.frequency.exponentialRampToValueAtTime(220, t + 0.12);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.09, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start(t);
+    osc.stop(t + 0.16);
+  }
+
+  // asteroid shatter: a low thump plus a burst of bandpassed noise debris
+  function rockBoom() {
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(140, t);
+    osc.frequency.exponentialRampToValueAtTime(42, t + 0.22);
+    const oscGain = ctx.createGain();
+    oscGain.gain.setValueAtTime(0.3, t);
+    oscGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+    osc.connect(oscGain);
+    oscGain.connect(master);
+    osc.start(t);
+    osc.stop(t + 0.32);
+
+    const source = ctx.createBufferSource();
+    source.buffer = noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(1900, t);
+    filter.frequency.exponentialRampToValueAtTime(500, t + 0.25);
+    filter.Q.value = 0.8;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.22, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(master);
+    source.start(t);
+    source.stop(t + 0.35);
   }
 
   function boostWhoosh() {

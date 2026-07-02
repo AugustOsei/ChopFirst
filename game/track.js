@@ -222,10 +222,10 @@ const TRACK_DEFS = [
     blurb: "A neon expressway orbiting a ringed gas giant — a flat-out climb to a weightless crest, diving esses and one station hairpin.",
     difficulty: "Flat-out",
     laps: 3,
-    // Calibrated from the headless proportional bot (160.3 s for 3 laps, clean,
-    // with the guideway steering assist) using the Akina ratios: gold ≈ bot
-    // time, silver ×1.04, bronze ×1.43.
-    medals: { bronze: 229500, silver: 167000, gold: 160500 },
+    // Calibrated from the headless proportional bot with auto-fire through the
+    // asteroid field (165.4 s for 3 laps, 26 blasted / 4 rammed) using the
+    // Akina ratios: gold ≈ bot time, silver ×1.04, bronze ×1.43.
+    medals: { bronze: 236500, silver: 172000, gold: 165500 },
     width: 11,
     railOffset: 6.4,
     startDistance: 60,
@@ -245,6 +245,25 @@ const TRACK_DEFS = [
       { pct: 0.34, lateral: 0 },
       { pct: 0.62, lateral: -0.9 },
       { pct: 0.88, lateral: 0 },
+    ],
+    // Asteroid hazards: rocks parked on the road that the laser (see
+    // updateVehicle) blasts away — hit one instead and it shatters against the
+    // car, scrubbing most of your speed. The layout is FIXED and respawns per
+    // lap exactly like coins, so every leaderboard run faces the same field.
+    // None sit in the hairpin (0.70–0.86, already the slow section) or on top
+    // of a boost star line.
+    hazards: [
+      { pct: 0.075, lateral: -1.6, scale: 1.0 },
+      { pct: 0.13, lateral: 1.8, scale: 1.3 },
+      { pct: 0.21, lateral: -0.6, scale: 1.1 },
+      { pct: 0.285, lateral: 2.2, scale: 0.9 },
+      { pct: 0.375, lateral: -2.0, scale: 1.2 },
+      { pct: 0.46, lateral: 0.8, scale: 1.4 },
+      { pct: 0.525, lateral: -1.4, scale: 1.0 },
+      { pct: 0.585, lateral: 1.2, scale: 1.1 },
+      { pct: 0.67, lateral: -0.8, scale: 0.9 },
+      { pct: 0.905, lateral: 1.6, scale: 1.3 },
+      { pct: 0.955, lateral: -1.2, scale: 1.0 },
     ],
   },
 ];
@@ -487,6 +506,13 @@ function buildTrack(def) {
 
   const pickups = def.coins.map((pickup) => ({ distance: pickup.pct * totalLength, lateral: pickup.lateral }));
   const boostStars = (def.boostStars || []).map((star) => ({ distance: star.pct * totalLength, lateral: star.lateral }));
+  // radius drives both the laser hit test and the crash test in updateVehicle
+  const hazards = (def.hazards || []).map((rock) => ({
+    distance: rock.pct * totalLength,
+    lateral: rock.lateral,
+    scale: rock.scale ?? 1,
+    radius: (rock.scale ?? 1) * 1.05,
+  }));
 
   return {
     def,
@@ -506,6 +532,7 @@ function buildTrack(def) {
     minimap,
     pickups,
     boostStars,
+    hazards,
   };
 }
 
@@ -521,6 +548,7 @@ export function setActiveTrack(id) {
   MINIMAP = active.minimap;
   PICKUPS = active.pickups;
   BOOST_PICKUPS = active.boostStars;
+  HAZARDS = active.hazards;
 }
 
 export function getActiveTrackId() {
@@ -544,6 +572,7 @@ export let TRACK = active.def;
 export let MINIMAP = active.minimap;
 export let PICKUPS = active.pickups;
 export let BOOST_PICKUPS = active.boostStars;
+export let HAZARDS = active.hazards;
 
 export function getTrackLength() {
   return active.totalLength;

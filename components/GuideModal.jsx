@@ -25,6 +25,7 @@ export default function GuideModal({ onClose }) {
                 <li><kbd>A</kbd> <kbd>D</kbd> / <kbd>←</kbd> <kbd>→</kbd> Steer</li>
                 <li><kbd>Shift</kbd> Handbrake / drift</li>
                 <li><kbd>Space</kbd> Boost</li>
+                <li><kbd>F</kbd> / <kbd>X</kbd> Fire laser (Orbital Highway)</li>
                 <li><kbd>Esc</kbd> / <kbd>P</kbd> Pause</li>
               </ul>
             </div>
@@ -49,6 +50,7 @@ export default function GuideModal({ onClose }) {
             <li><b>Drift</b> — hold the handbrake into a corner to slide and build drift score. Counter-steer to recover.</li>
             <li><b>Coins</b> — lines and arcs trace the fast line, clusters sit off it; they return every lap. Collect 15 for an extra boost.</li>
             <li><b>Rails</b> — glancing hits scrape speed off; head-on hits stop you. Steer away from the rail (or reverse out) to recover.</li>
+            <li><b>Asteroids</b> — on the Orbital Highway, rocks sit on the road. Blast them with your laser (<kbd>F</kbd> or FIRE) before you reach them; ram one and it shatters, costing most of your speed. Same rocks every lap — learn where they wait.</li>
             <li><b>Reverse</b> — stop, then keep holding brake. The car backs and steers like a real car.</li>
             <li><b>Ghosts</b> — a gold ghost races your personal best on every run; on a challenge link, blue and purple ghosts replay your rivals&apos; best runs. Name tags show who&apos;s who (toggle in pause), and the gap timer shows live how far ahead or behind you are.</li>
             <li><b>Medals</b> — bronze, silver, and gold target times on every run. Press <kbd>R</kbd> anytime for an instant restart.</li>

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { BOOST_PICKUPS, getTrackFrame, getTrackLength, PICKUPS, TRACK, pointAt, projectPointToTrack, wrapDistance } from "./track.js";
+import { BOOST_PICKUPS, getTrackFrame, getTrackLength, HAZARDS, PICKUPS, TRACK, pointAt, projectPointToTrack, wrapDistance } from "./track.js";
 
 // All speeds in m/s, all angles in radians.
 // Yaw convention: forward = (sin(yaw), 0, cos(yaw)); +yaw rotates the nose toward +X.
@@ -144,6 +144,15 @@ const RAIL_CUSHION_MARGIN = 1.0;
 const RAIL_CUSHION_SPRING = 4.0;
 const CAR_HALF_WIDTH = 1.1;
 const RAIL_LIMIT = TRACK.railOffset - CAR_HALF_WIDTH - 0.2;
+// Laser cannon (tracks with hazards only). Hitscan: the beam is instant, with
+// a forgiving half-width so aiming is about lane choice at 180 km/h, not
+// pixel-hunting. The cooldown keeps firing a rhythm (aim–fire–aim), not a hose.
+const LASER_RANGE = 85;
+const LASER_COOLDOWN = 0.28;
+const LASER_HALF_WIDTH = 1.4;
+// Ramming an asteroid shatters it but scrubs most of the car's speed — a
+// harsher version of a head-on rail hit, since you had a gun to prevent it.
+const HAZARD_CRASH_SPEED_KEEP = 0.45;
 
 export function createVehicleState(vehicleId = DEFAULT_VEHICLE) {
   const tuning = VEHICLE_TUNING[vehicleId] || VEHICLE_TUNING[DEFAULT_VEHICLE];
@@ -188,6 +197,15 @@ export function createVehicleState(vehicleId = DEFAULT_VEHICLE) {
     railSide: 0,
     railContact: 0,
     scrapeTimer: 0,
+    // laser cannon / asteroid hazards (lap-scoped keys, like coins)
+    blasted: new Set(),
+    blasts: 0,
+    asteroidHits: 0,
+    shots: 0,
+    laserCooldown: 0,
+    laserBeam: null, // { from:{x,y,z}, to:{x,y,z}, ttl } for the renderer
+    lastBlast: null, // { x, y, z, crash } — one FX event per blastEvents bump
+    blastEvents: 0,
   };
 }
 
@@ -382,6 +400,71 @@ export function updateVehicle(car, input, dt) {
   if (previousProgress - nextProgress > trackLength * 0.5 && fwd > 1) {
     if (car.startGatePassed) car.lap += 1;
     car.startGatePassed = true;
+  }
+
+  // --- Asteroid hazards + laser cannon (only on tracks that define hazards).
+  // Rocks respawn per lap with lap-scoped keys, exactly like coins, so every
+  // run faces the same deterministic field and times stay comparable.
+  if (HAZARDS.length > 0) {
+    car.laserCooldown = Math.max(0, car.laserCooldown - dt);
+
+    // Crash test: an unblasted rock inside the car's footprint shatters
+    // against the chassis and scrubs most of the speed.
+    HAZARDS.forEach((rock, index) => {
+      const key = car.lap * 1000 + index;
+      if (car.blasted.has(key)) return;
+      const along = Math.abs(shortDistance(car.distance, rock.distance, trackLength));
+      if (along > rock.radius + 1.9) return;
+      if (Math.abs(car.lateral - rock.lateral) > rock.radius + CAR_HALF_WIDTH * 0.8) return;
+      car.blasted.add(key);
+      car.asteroidHits += 1;
+      car.velocity.multiplyScalar(HAZARD_CRASH_SPEED_KEEP);
+      fwd = car.velocity.dot(forward);
+      side = car.velocity.dot(right);
+      car.forwardSpeed = fwd;
+      car.sideSpeed = side;
+      car.speed = fwd;
+      car.impact = 1;
+      const pos = pointAt(rock.distance, rock.lateral);
+      car.lastBlast = { x: pos.x, y: pos.y + rock.scale * 0.8, z: pos.z, crash: true };
+      car.blastEvents += 1;
+    });
+
+    if (input.fire && car.laserCooldown <= 0) {
+      car.laserCooldown = LASER_COOLDOWN;
+      car.shots += 1;
+      // hitscan straight along the nose: nearest rock inside the beam wins
+      let best = null;
+      HAZARDS.forEach((rock, index) => {
+        const key = car.lap * 1000 + index;
+        if (car.blasted.has(key)) return;
+        const pos = pointAt(rock.distance, rock.lateral);
+        const relX = pos.x - car.position.x;
+        const relZ = pos.z - car.position.z;
+        const along = relX * forward.x + relZ * forward.z;
+        if (along < 2 || along > LASER_RANGE) return;
+        const perp = Math.abs(relX * right.x + relZ * right.z);
+        if (perp > rock.radius + LASER_HALF_WIDTH) return;
+        if (!best || along < best.along) best = { key, pos, along, scale: rock.scale };
+      });
+      const originY = car.position.y + 0.55;
+      const reach = best ? best.along : LASER_RANGE;
+      car.laserBeam = {
+        from: { x: car.position.x, y: originY, z: car.position.z },
+        to: { x: car.position.x + forward.x * reach, y: originY, z: car.position.z + forward.z * reach },
+        ttl: 0.12,
+      };
+      if (best) {
+        car.blasted.add(best.key);
+        car.blasts += 1;
+        car.lastBlast = { x: best.pos.x, y: best.pos.y + best.scale * 0.8, z: best.pos.z, crash: false };
+        car.blastEvents += 1;
+      }
+    }
+    if (car.laserBeam) {
+      car.laserBeam.ttl -= dt;
+      if (car.laserBeam.ttl <= 0) car.laserBeam = null;
+    }
   }
 
   // coins respawn each lap: collected keys are lap-scoped

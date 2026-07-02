@@ -1883,6 +1883,25 @@ textarea:focus {
   font-size: 11px;
 }
 
+/* laser trigger — only mounts on tracks with asteroid hazards */
+.t-fire {
+  flex-direction: row;
+  gap: 7px;
+  width: 118px;
+  height: 50px;
+  border-radius: 999px;
+  background: rgba(160, 32, 240, .5);
+  color: #ffe9ff;
+  border-color: rgba(255, 94, 216, .6);
+  font-size: 11px;
+}
+
+.t-fire-icon {
+  font-size: 16px;
+  line-height: 1;
+  color: #ff5ad2;
+}
+
 .reverse-hint {
   position: absolute;
   left: 50%;
