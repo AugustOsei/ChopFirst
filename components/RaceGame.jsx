@@ -3425,24 +3425,26 @@ function getGhostTransform(distance, lateral, headingError) {
 
 /* --------------------------------- controls --------------------------------- */
 
-function SteerArrows({ dir }) {
+// Racing corner-board chevrons for the steer buttons: a bold lead chevron
+// with two fading echoes. While pressed, CSS marches them sequentially in
+// the steering direction, like a modern car's sweeping turn indicator.
+function SteerChevron({ dir }) {
   return (
     <svg
-      viewBox="0 0 68 76"
-      width="68"
-      height="76"
+      viewBox="0 0 46 32"
+      width="42"
+      height="30"
       fill="none"
       stroke="currentColor"
-      strokeWidth="8"
+      strokeWidth="4"
       strokeLinecap="round"
       strokeLinejoin="round"
       style={dir === "right" ? { transform: "scaleX(-1)" } : undefined}
       aria-hidden
     >
-      <path d="M26 6 10 38l16 32" />
-      <path d="M38 6 22 38l16 32" opacity=".58" />
-      <path d="M50 6 34 38l16 32" opacity=".32" />
-      <path d="M62 6 46 38l16 32" opacity=".14" />
+      <path className="chev chev-1" d="M16 4 4 16l12 12" />
+      <path className="chev chev-2" d="M28 4 16 16l12 12" opacity=".5" />
+      <path className="chev chev-3" d="M40 4 28 16l12 12" opacity=".22" />
     </svg>
   );
 }
@@ -3483,10 +3485,13 @@ function BoostTank({ boosts }) {
   );
 }
 
-// Touch layout: throttle is automatic. Steering is split — one zone in each
-// bottom corner so each thumb owns a direction. DRIFT is mirrored above both
-// zones (it's held *while* steering, so it must be reachable by whichever
-// thumb is free). Boost tank + brake bar sit center, out of fat-finger range.
+// Touch layout: throttle is automatic. Each bottom corner is a thumb-orbit
+// cluster — the steer circle sits at the corner pivot, and boost (left) /
+// fire (right) plus a drift dot ride the thumb's natural sweep arc, so every
+// action is one pivot away without leaving the steering position. DRIFT is
+// mirrored on both sides (it's held *while* steering, so it must be
+// reachable by whichever thumb is free). Brake sits center-low for either
+// thumb, beneath the car so the road view stays clear.
 function TouchControls({ controlsRef, boosts, lasers }) {
   const padRef = useRef(null);
 
@@ -3550,34 +3555,32 @@ function TouchControls({ controlsRef, boosts, lasers }) {
   return (
     <div ref={padRef} className="touch-controls race-controls" onContextMenu={(event) => event.preventDefault()}>
       <div className="corner-cluster">
-        <button type="button" className="t-drift" aria-label="Drift" data-control="handbrake">
-          <DriftIcon />
-          <span>DRIFT</span>
-        </button>
-        <button type="button" className="t-steer" aria-label="Steer left" data-control="left"><SteerArrows dir="left" /></button>
-      </div>
-      <div className="center-cluster">
-        <button type="button" className={`t-boost${boosts <= 0 ? " empty" : ""}`} aria-label={`Boost, ${boosts} charges left`} data-control="boost">
+        <button type="button" className={`t-boost${boosts <= 0 ? " empty" : ""}${boosts >= MAX_BOOST_CHARGES ? " full" : ""}`} aria-label={`Boost, ${boosts} charges left`} data-control="boost">
           <BoostTank boosts={boosts} />
           <b>×{boosts}</b>
         </button>
-        {lasers && (
-          <button type="button" className="t-fire" aria-label="Fire laser" data-control="fire">
-            <span className="t-fire-icon">◎</span>
-            <span>FIRE</span>
-          </button>
-        )}
+        <button type="button" className="t-drift" aria-label="Drift" data-control="handbrake">
+          <DriftIcon />
+        </button>
+        <button type="button" className="t-steer" aria-label="Steer left" data-control="left"><SteerChevron dir="left" /></button>
+      </div>
+      <div className="center-cluster">
         <button type="button" className="t-brake" aria-label="Brake, hold to reverse" data-control="brake">
           <BrakeIcon />
           <span>BRAKE</span>
         </button>
       </div>
       <div className="corner-cluster">
+        {lasers && (
+          <button type="button" className="t-fire" aria-label="Fire laser" data-control="fire">
+            <span className="t-fire-icon">◎</span>
+            <span>FIRE</span>
+          </button>
+        )}
         <button type="button" className="t-drift" aria-label="Drift" data-control="handbrake">
           <DriftIcon />
-          <span>DRIFT</span>
         </button>
-        <button type="button" className="t-steer" aria-label="Steer right" data-control="right"><SteerArrows dir="right" /></button>
+        <button type="button" className="t-steer" aria-label="Steer right" data-control="right"><SteerChevron dir="right" /></button>
       </div>
     </div>
   );

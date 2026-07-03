@@ -1790,16 +1790,82 @@ textarea:focus {
   font-weight: 800;
 }
 
+/* Clusters are pinned, not flexed: corner clusters + center brake stay
+   overlap-safe on narrow phones instead of forcing a 400px+ min row width. */
 .touch-controls {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  padding: 0 10px calc(10px + env(safe-area-inset-bottom, 0px));
   pointer-events: none;
+}
+
+.touch-controls .corner-cluster,
+.touch-controls .center-cluster {
+  position: absolute;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+}
+
+.touch-controls .corner-cluster:first-child {
+  left: 12px;
+}
+
+.touch-controls .corner-cluster:last-child {
+  right: 12px;
+}
+
+.touch-controls .center-cluster {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* Thumb-orbit cluster: steer anchors the corner, boost/fire and the drift
+   dot sit on the thumb's natural pivot arc around it. */
+.touch-controls .corner-cluster {
+  display: block;
+  width: 152px;
+  height: 158px;
+  pointer-events: none;
+}
+
+.corner-cluster .t-steer {
+  position: absolute;
+  bottom: 0;
+}
+
+.corner-cluster:first-child .t-steer {
+  left: 0;
+}
+
+.corner-cluster:last-child .t-steer {
+  right: 0;
+}
+
+.corner-cluster .t-drift {
+  position: absolute;
+  bottom: 6px;
+}
+
+.corner-cluster:first-child .t-drift {
+  left: 94px;
+}
+
+.corner-cluster:last-child .t-drift {
+  right: 94px;
+}
+
+.corner-cluster .t-boost,
+.corner-cluster .t-fire {
+  position: absolute;
+  bottom: 96px;
+}
+
+.corner-cluster:first-child .t-boost {
+  left: 42px;
+}
+
+.corner-cluster:last-child .t-fire {
+  right: 42px;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -1813,91 +1879,229 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   pointer-events: auto;
 }
 
+/* boost · brake · fire share one low row so nothing stacks up over the car */
+.center-cluster {
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+/* Projected-light controls: frosted glass circles rimmed with a slowly
+   rotating two-tone conic gradient ("aurora rim") instead of a flat border.
+   --glow carries each control's rail color (r, g, b). */
 .touch-controls button {
+  --glow: 125, 232, 255;
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  border: 1px solid rgba(255, 255, 255, .3);
-  background: rgba(13, 20, 27, .6);
-  color: #f9fbfb;
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: .08em;
+  gap: 2px;
+  border: 0;
+  background: rgba(10, 16, 24, .3);
+  color: rgba(244, 250, 253, .9);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .14em;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
-  backdrop-filter: blur(12px);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, .25);
+  backdrop-filter: blur(14px);
+  opacity: .68;
+  pointer-events: auto;
+  transition: opacity .15s ease, box-shadow .15s ease, transform .1s ease;
+}
+
+.touch-controls button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(rgba(var(--glow), .95), rgba(125, 232, 255, .16), rgba(var(--glow), .95));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: rim-spin 6s linear infinite;
+  pointer-events: none;
 }
 
 .touch-controls button.pressed {
-  transform: scale(.95);
-  filter: brightness(1.3);
+  opacity: 1;
+  transform: scale(.96);
+  box-shadow:
+    0 0 24px rgba(var(--glow), .5),
+    inset 0 0 16px rgba(var(--glow), .18);
 }
 
-.t-steer {
-  width: 86px;
-  height: 112px;
-  border-radius: 24px;
+.touch-controls button.pressed::before {
+  animation-duration: 1.4s;
+  filter: brightness(1.7) saturate(1.4);
 }
 
-.t-drift {
+@keyframes rim-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .touch-controls button::before,
+  .speedo::before,
+  .t-steer.pressed .chev,
+  .touch-controls .t-boost.full,
+  .touch-controls .t-boost.full svg {
+    animation: none;
+  }
+}
+
+/* BRAKE/FIRE labels teach the layout, then dissolve — glyphs are enough */
+.t-brake span,
+.t-fire span:not(.t-fire-icon) {
+  animation: label-fade .6s ease 7s forwards;
+}
+
+@keyframes label-fade {
+  to { opacity: 0; }
+}
+
+/* steering: clean glass circles, a chevron, and a touch of glow.
+   Rules are scoped under .touch-controls so they outrank the generic
+   `.touch-controls button` base rule. */
+.touch-controls .t-steer {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  color: #bfeeff;
+  box-shadow: 0 0 14px rgba(125, 232, 255, .12), inset 0 0 12px rgba(125, 232, 255, .08);
+  opacity: .74;
+}
+
+/* held steer: chevrons sweep toward the turn, trailing echo first —
+   the same cadence as a sequential turn indicator */
+.t-steer.pressed .chev {
+  animation: chev-march .54s linear infinite;
+}
+
+.t-steer.pressed .chev-2 {
+  animation-delay: .12s;
+}
+
+.t-steer.pressed .chev-3 {
+  animation-delay: .24s;
+}
+
+@keyframes chev-march {
+  0%, 55%, 100% {
+    opacity: .22;
+  }
+  20% {
+    opacity: 1;
+  }
+}
+
+.touch-controls .t-drift {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(10, 16, 24, .2);
+  opacity: .4;
+}
+
+.touch-controls .t-boost {
+  --glow: 255, 177, 46;
   width: 58px;
   height: 58px;
   border-radius: 50%;
-  background: rgba(24, 31, 40, .78);
+  color: #ffc668;
+  box-shadow: 0 0 12px rgba(255, 177, 46, .14), inset 0 0 10px rgba(255, 177, 46, .08);
 }
 
-.t-boost {
-  width: 62px;
-  height: 76px;
-  border-radius: 16px;
-  color: #ffb12e;
-  background: rgba(26, 18, 5, .55);
-  border-color: rgba(255, 177, 46, .55);
+.t-boost svg {
+  width: 19px;
+  height: 27px;
 }
 
 .t-boost b {
-  font-size: 11px;
+  font-size: 10px;
 }
 
-.t-boost.empty {
-  opacity: .45;
+.touch-controls .t-boost.empty {
+  opacity: .3;
 }
 
-.t-brake {
-  flex-direction: row;
-  gap: 7px;
-  width: 118px;
-  height: 50px;
-  border-radius: 999px;
-  background: rgba(255, 69, 58, .82);
-  color: #fff8f7;
-  border-color: rgba(255, 255, 255, .4);
-  font-size: 11px;
+/* full tank: ready-to-fire heartbeat — glow swells, rim spins quicker */
+.touch-controls .t-boost.full {
+  opacity: .95;
+  animation: boost-ready 1.6s ease-in-out infinite;
+}
+
+.touch-controls .t-boost.full::before {
+  animation-duration: 2.2s;
+  filter: brightness(1.3) saturate(1.2);
+}
+
+.touch-controls .t-boost.full svg {
+  animation: boost-tank-glow 1.6s ease-in-out infinite;
+}
+
+.touch-controls .t-boost.pressed {
+  animation: none;
+}
+
+@keyframes boost-ready {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 12px rgba(255, 177, 46, .18), inset 0 0 10px rgba(255, 177, 46, .1);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 26px rgba(255, 177, 46, .55), inset 0 0 16px rgba(255, 177, 46, .22);
+  }
+}
+
+@keyframes boost-tank-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 2px rgba(255, 177, 46, .4));
+  }
+  50% {
+    filter: drop-shadow(0 0 8px rgba(255, 209, 110, .95));
+  }
+}
+
+.touch-controls .t-brake {
+  --glow: 255, 69, 58;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  color: #ffb3ae;
+  box-shadow: 0 0 12px rgba(255, 69, 58, .14), inset 0 0 10px rgba(255, 69, 58, .08);
+  font-size: 8px;
+}
+
+.touch-controls .t-brake.pressed {
+  background: rgba(255, 69, 58, .26);
+  color: #fff2f1;
 }
 
 /* laser trigger — only mounts on tracks with asteroid hazards */
-.t-fire {
-  flex-direction: row;
-  gap: 7px;
-  width: 118px;
-  height: 50px;
-  border-radius: 999px;
-  background: rgba(160, 32, 240, .5);
-  color: #ffe9ff;
-  border-color: rgba(255, 94, 216, .6);
-  font-size: 11px;
+.touch-controls .t-fire {
+  --glow: 255, 90, 210;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  color: #ffd7f4;
+  box-shadow: 0 0 12px rgba(255, 90, 210, .14), inset 0 0 10px rgba(255, 90, 210, .08);
+  font-size: 8px;
 }
 
 .t-fire-icon {
-  font-size: 16px;
+  font-size: 18px;
   line-height: 1;
   color: #ff5ad2;
 }
@@ -1905,7 +2109,7 @@ textarea:focus {
 .reverse-hint {
   position: absolute;
   left: 50%;
-  bottom: calc(160px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(120px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   padding: 8px 14px;
   border: 1px solid rgba(255, 255, 255, .25);
@@ -1939,17 +2143,6 @@ textarea:focus {
     min-height: 0;
     border: 0;
     border-radius: 0;
-  }
-
-  .speedo {
-    left: 10px;
-    bottom: calc(200px + env(safe-area-inset-bottom, 0px));
-    width: 92px;
-    height: 92px;
-  }
-
-  .speedo-core b {
-    font-size: 26px;
   }
 
   /* boost tank in the touch controls is the meter */
@@ -3224,3 +3417,178 @@ kbd {
 }
 .update-dismiss:hover { opacity: 1; }
 .mc-track > span i { font-size: 10px; font-weight: 600; color: #9fb0c0; font-style: normal; }
+
+/* --------------------------- glass HUD (touch) ---------------------------
+   The race HUD as projected light: no opaque panels, only hairlines, glass,
+   and glow. Appended last so it outranks the width-based mobile rules. */
+@media (hover: none) {
+  /* one top row: pause + mute circles left, gauge capsule centered */
+  .hud-corner {
+    top: 10px;
+    left: 10px;
+    gap: 6px;
+  }
+
+  .hud-pause {
+    width: 34px;
+    height: 34px;
+    border-color: rgba(125, 232, 255, .32);
+    background: rgba(8, 14, 22, .42);
+    box-shadow: 0 0 14px rgba(125, 232, 255, .1), inset 0 0 10px rgba(125, 232, 255, .05);
+    backdrop-filter: blur(14px);
+  }
+
+  .driver-chip {
+    display: none;
+  }
+
+  .hud-top {
+    top: 10px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    flex-wrap: nowrap;
+    gap: 0;
+    padding: 2px;
+    border-color: rgba(125, 232, 255, .32);
+    background: rgba(8, 14, 22, .42);
+    box-shadow: 0 0 16px rgba(125, 232, 255, .1), inset 0 0 12px rgba(125, 232, 255, .05);
+    backdrop-filter: blur(14px);
+  }
+
+  .hud-chip {
+    min-width: 46px;
+    padding: 4px 9px 6px;
+  }
+
+  .hud-chip b {
+    font-size: 14px;
+  }
+
+  .hud-chip::after {
+    display: none;
+  }
+
+  /* drift score is an end-of-race stat, not a live gauge */
+  .drift-chip {
+    display: none;
+  }
+
+  .delta-timer {
+    top: 58px;
+    border-color: rgba(125, 232, 255, .32);
+    background: rgba(8, 14, 22, .5);
+  }
+
+  /* minimap: slim neon-outlined card, progress bar dropped (the dot shows it) */
+  .progress-map {
+    top: 54px;
+    right: 10px;
+    left: auto;
+    transform: none;
+    width: 88px;
+    padding: 7px;
+    border: 1px solid rgba(125, 232, 255, .32);
+    border-radius: 12px;
+    background: rgba(8, 14, 22, .42);
+    box-shadow: 0 0 16px rgba(125, 232, 255, .1), inset 0 0 12px rgba(125, 232, 255, .05);
+    backdrop-filter: blur(12px);
+    opacity: .92;
+  }
+
+  .progress-track {
+    display: none;
+  }
+
+  .reverse-hint {
+    border-color: rgba(125, 232, 255, .32);
+    background: rgba(8, 14, 22, .8);
+  }
+
+  /* speedometer: floating segmented-arc gauge — neon ring, translucent core,
+     no machined bezel. Lives in the open air top-right, stacked under the
+     minimap, so the bottom of the screen stays uncluttered. */
+  .speedo {
+    top: 168px;
+    right: 12px;
+    left: auto;
+    bottom: auto;
+    transform: none;
+    width: 88px;
+    height: 88px;
+  }
+
+  .speedo::before {
+    inset: -3px;
+    padding: 1.5px;
+    background: conic-gradient(rgba(125, 232, 255, .75), rgba(255, 90, 210, .25), rgba(125, 232, 255, .75));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    box-shadow: none;
+    animation: rim-spin 9s linear infinite;
+  }
+
+  /* dark slices over the arc band cut the ring into gauge segments */
+  .speedo-ticks {
+    inset: 4px;
+    z-index: 1;
+    opacity: 1;
+    background: repeating-conic-gradient(from -138deg, rgba(5, 10, 16, .92) 0 2.4deg, transparent 2.4deg 13.2deg);
+    -webkit-mask-image: radial-gradient(circle, transparent 0 58%, #000 60% 92%, transparent 93%);
+    mask-image: radial-gradient(circle, transparent 0 58%, #000 60% 92%, transparent 93%);
+  }
+
+  .speedo-core {
+    inset: 13px;
+    background: rgba(8, 14, 22, .32);
+    border: 0;
+    box-shadow: none;
+    backdrop-filter: blur(8px);
+  }
+
+  .speedo-core b {
+    font-size: 23px;
+    font-weight: 700;
+    letter-spacing: 0;
+    background: none;
+    color: #eaf7ff;
+    -webkit-text-fill-color: #eaf7ff;
+    text-shadow:
+      0 0 10px rgba(125, 232, 255, .4),
+      0 0 calc(var(--heat) * 14px) rgba(255, 90, 100, calc(var(--heat) * .8));
+  }
+
+  .speedo.boosting .speedo-core b {
+    color: #ffe2b4;
+    -webkit-text-fill-color: #ffe2b4;
+    text-shadow: 0 0 18px rgba(255, 177, 46, .8);
+  }
+
+  .speedo-core small {
+    margin-top: 0;
+    color: rgba(199, 226, 240, .72);
+    font-size: 7px;
+    font-weight: 700;
+    letter-spacing: .24em;
+  }
+
+  .speedo-core .gear {
+    margin-top: 1px;
+    padding: 0;
+    min-width: 0;
+    border: 0;
+    background: none;
+    color: rgba(199, 226, 240, .78);
+    font-size: 9px;
+    letter-spacing: .2em;
+  }
+
+  .speedo-core .gear.rev {
+    background: none;
+    box-shadow: none;
+    color: #ff6b62;
+    text-shadow: 0 0 12px rgba(255, 69, 58, .8);
+  }
+}

@@ -65,11 +65,11 @@ export default function RaceHud({ race, driver, muted, onToggleMute, onPause }) 
           <small>TIME</small>
           <b>{formatTime(race.timeMs)}</b>
         </div>
-        <div className="hud-chip">
+        <div className="hud-chip coins-chip">
           <small>COINS</small>
           <b key={race.coins} className={race.coins > 0 ? "pop-in" : ""}>{race.coins}</b>
         </div>
-        <div className="hud-chip">
+        <div className="hud-chip drift-chip">
           <small>DRIFT</small>
           <b className={race.drifting ? "drift-live" : ""}>{race.driftScore}</b>
         </div>
