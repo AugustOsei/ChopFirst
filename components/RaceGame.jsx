@@ -3486,12 +3486,13 @@ function BoostTank({ boosts }) {
 }
 
 // Touch layout: throttle is automatic. Each bottom corner is a thumb-orbit
-// cluster — the steer circle sits at the corner pivot, and boost (left) /
-// fire (right) plus a drift dot ride the thumb's natural sweep arc, so every
-// action is one pivot away without leaving the steering position. DRIFT is
-// mirrored on both sides (it's held *while* steering, so it must be
-// reachable by whichever thumb is free). Brake sits center-low for either
-// thumb, beneath the car so the road view stays clear.
+// cluster — the steer circle sits at the corner pivot, and brake (left) /
+// fire (right) plus a drift dot ride the thumb's natural sweep arc. BOOST is
+// the hero action, so it owns the big center-low circle where *either* thumb
+// can smash it mid-corner; brake is rarer (panic stops, hold-to-reverse
+// recovery) and lives on the left orbit, always the same spot on every
+// track. DRIFT is mirrored on both sides (it's held *while* steering, so it
+// must be reachable by whichever thumb is free).
 function TouchControls({ controlsRef, boosts, lasers }) {
   const padRef = useRef(null);
 
@@ -3555,9 +3556,9 @@ function TouchControls({ controlsRef, boosts, lasers }) {
   return (
     <div ref={padRef} className="touch-controls race-controls" onContextMenu={(event) => event.preventDefault()}>
       <div className="corner-cluster">
-        <button type="button" className={`t-boost${boosts <= 0 ? " empty" : ""}${boosts >= MAX_BOOST_CHARGES ? " full" : ""}`} aria-label={`Boost, ${boosts} charges left`} data-control="boost">
-          <BoostTank boosts={boosts} />
-          <b>×{boosts}</b>
+        <button type="button" className="t-brake" aria-label="Brake, hold to reverse" data-control="brake">
+          <BrakeIcon />
+          <span>BRAKE</span>
         </button>
         <button type="button" className="t-drift" aria-label="Drift" data-control="handbrake">
           <DriftIcon />
@@ -3565,9 +3566,9 @@ function TouchControls({ controlsRef, boosts, lasers }) {
         <button type="button" className="t-steer" aria-label="Steer left" data-control="left"><SteerChevron dir="left" /></button>
       </div>
       <div className="center-cluster">
-        <button type="button" className="t-brake" aria-label="Brake, hold to reverse" data-control="brake">
-          <BrakeIcon />
-          <span>BRAKE</span>
+        <button type="button" className={`t-boost${boosts <= 0 ? " empty" : ""}${boosts >= MAX_BOOST_CHARGES ? " full" : ""}`} aria-label={`Boost, ${boosts} charges left`} data-control="boost">
+          <BoostTank boosts={boosts} />
+          <b>×{boosts}</b>
         </button>
       </div>
       <div className="corner-cluster">

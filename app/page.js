@@ -8,6 +8,7 @@ import FeedbackModal from "../components/FeedbackModal";
 import ChangelogModal from "../components/ChangelogModal";
 import { CURRENT_VERSION } from "../lib/changelog";
 import { logEvent } from "../lib/log-event";
+import { AD_SECONDS, pickAd } from "../lib/ads";
 import { TRACK, listTracks, setActiveTrack } from "../game/track";
 import { listVehicles, vehicleStats, DEFAULT_VEHICLE } from "../game/vehicle";
 
@@ -162,6 +163,11 @@ export default function Home() {
   // drop the overlay once RaceScene's first frame signals it's drawing (onReady).
   const [mountRace, setMountRace] = useState(false);
   const [raceReady, setRaceReady] = useState(false);
+  // Sponsor interstitial on the loading overlay: fresh race entries hold for
+  // AD_SECONDS with a creative; mid-race restarts skip it (skipAdRef).
+  const [ad, setAd] = useState(null);
+  const [adSecondsLeft, setAdSecondsLeft] = useState(0);
+  const skipAdRef = useRef(false);
   const [timeOfDay, setTimeOfDayState] = useState("day");
   const [challengeId, setChallengeId] = useState("");
   const [challenge, setChallenge] = useState(null);
@@ -288,23 +294,49 @@ export default function Home() {
   }
 
   // When (re)entering a race, paint the loading overlay first, then mount the heavy
-  // RaceGame two frames later so the overlay is on screen during the scene build.
+  // RaceGame so the overlay covers the scene build. Fresh entries run the sponsor
+  // countdown first and mount when it hits zero (so the 3-2-1 start isn't eaten
+  // behind the ad); restarts take the old two-frame fast path.
   useEffect(() => {
     if (screen !== "race") {
       setMountRace(false);
       setRaceReady(false);
+      setAd(null);
+      setAdSecondsLeft(0);
       return;
     }
     setRaceReady(false);
     setMountRace(false);
-    let raf2 = 0;
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => setMountRace(true));
-    });
-    return () => {
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-    };
+
+    if (skipAdRef.current) {
+      skipAdRef.current = false;
+      setAd(null);
+      setAdSecondsLeft(0);
+      let raf2 = 0;
+      const raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => setMountRace(true));
+      });
+      return () => {
+        cancelAnimationFrame(raf1);
+        cancelAnimationFrame(raf2);
+      };
+    }
+
+    setAd(pickAd());
+    setAdSecondsLeft(AD_SECONDS);
+    logEvent("ad_impression");
+    let left = AD_SECONDS;
+    const tick = setInterval(() => {
+      // hold the countdown while the tab is hidden (player reading the ad)
+      if (document.hidden) return;
+      left -= 1;
+      setAdSecondsLeft(left);
+      if (left <= 0) {
+        clearInterval(tick);
+        setMountRace(true);
+      }
+    }, 1000);
+    return () => clearInterval(tick);
   }, [screen, raceKey]);
 
   function finishRace(run) {
@@ -475,11 +507,12 @@ export default function Home() {
                 onReady={() => setRaceReady(true)}
                 onRestart={() => {
                   logEvent("race_started");
+                  skipAdRef.current = true;
                   setRaceKey((value) => value + 1);
                 }}
               />
             )}
-            {!raceReady && <RaceLoading />}
+            {(!raceReady || adSecondsLeft > 0) && <RaceLoading ad={ad} secondsLeft={adSecondsLeft} />}
           </>
         ) : screen === "setup" ? null : (
           <IntroBackdrop variant="panel" />
@@ -1318,12 +1351,37 @@ function Panel({ children, wide }) {
 }
 
 // Covers the stage while the race scene assembles (geometry build + first paint).
-function RaceLoading() {
+// Fresh race entries pass an ad: the overlay becomes a sponsor card with a start
+// countdown pinned to a slim top bar so nothing sits on the creative. Restarts
+// pass no ad and get the plain quick loader.
+function RaceLoading({ ad, secondsLeft = 0 }) {
+  if (!ad) {
+    return (
+      <div className="race-loading" role="status" aria-live="polite">
+        <div className="race-loading-mark">CHOP<span>FIRST</span></div>
+        <div className="race-loading-bar"><span /></div>
+        <p>Building the track…</p>
+      </div>
+    );
+  }
+  const progress = ((AD_SECONDS - Math.max(0, secondsLeft)) / AD_SECONDS) * 100;
   return (
-    <div className="race-loading" role="status" aria-live="polite">
-      <div className="race-loading-mark">CHOP<span>FIRST</span></div>
-      <div className="race-loading-bar"><span /></div>
-      <p>Building the track…</p>
+    <div className="race-loading ad-loading" role="status" aria-live="polite">
+      <div className="ad-topbar">
+        <span className="ad-chip">Ad</span>
+        <div className="ad-progress"><span style={{ width: `${progress}%` }} /></div>
+        <b>{secondsLeft > 0 ? `Race starts in ${secondsLeft}` : "Starting…"}</b>
+      </div>
+      <a
+        className="ad-card"
+        href={ad.url}
+        target="_blank"
+        rel="noopener noreferrer sponsored"
+        onClick={() => logEvent("ad_click")}
+      >
+        <img src={ad.image} alt={ad.alt} fetchPriority="high" />
+        <span className="ad-cta">Visit {ad.domain} ↗</span>
+      </a>
     </div>
   );
 }

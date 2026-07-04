@@ -1854,13 +1854,13 @@ textarea:focus {
   right: 94px;
 }
 
-.corner-cluster .t-boost,
+.corner-cluster .t-brake,
 .corner-cluster .t-fire {
   position: absolute;
   bottom: 96px;
 }
 
-.corner-cluster:first-child .t-boost {
+.corner-cluster:first-child .t-brake {
   left: 42px;
 }
 
@@ -2015,16 +2015,16 @@ textarea:focus {
 
 .touch-controls .t-boost {
   --glow: 255, 177, 46;
-  width: 58px;
-  height: 58px;
+  width: 68px;
+  height: 68px;
   border-radius: 50%;
   color: #ffc668;
   box-shadow: 0 0 12px rgba(255, 177, 46, .14), inset 0 0 10px rgba(255, 177, 46, .08);
 }
 
 .t-boost svg {
-  width: 19px;
-  height: 27px;
+  width: 22px;
+  height: 32px;
 }
 
 .t-boost b {
@@ -2076,8 +2076,8 @@ textarea:focus {
 
 .touch-controls .t-brake {
   --glow: 255, 69, 58;
-  width: 68px;
-  height: 68px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
   color: #ffb3ae;
   box-shadow: 0 0 12px rgba(255, 69, 58, .14), inset 0 0 10px rgba(255, 69, 58, .08);
@@ -3361,6 +3361,86 @@ kbd {
   100% { transform: translateX(360%); }
 }
 .race-loading p { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #9fb0c0; }
+
+/* Sponsor interstitial variant: countdown + progress ride a slim top bar,
+   the portrait creative sits contained on a solid deep-space card — one
+   asset works in both portrait (mobile) and landscape (desktop) stages. */
+.ad-loading {
+  gap: 12px;
+  padding: 14px;
+  background: #04070e;
+}
+.ad-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(560px, 100%);
+}
+.ad-chip {
+  padding: 2px 8px;
+  border: 1px solid rgba(255, 255, 255, .28);
+  border-radius: 6px;
+  color: #cfd8df;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+.ad-progress {
+  flex: 1;
+  height: 5px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, .12);
+  overflow: hidden;
+}
+.ad-progress span {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #7de8ff, #ff5ad2);
+  transition: width 1s linear;
+}
+.ad-topbar b {
+  color: #cfe6f2;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ad-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: min(560px, 100%);
+  flex: 1;
+  min-height: 0;
+  border: 1px solid rgba(125, 232, 255, .16);
+  border-radius: 18px;
+  background: #0b1626; /* solid fill around the creative */
+  overflow: hidden;
+}
+.ad-card img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.ad-cta {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  padding: 7px 14px;
+  border: 1px solid rgba(125, 232, 255, .35);
+  border-radius: 999px;
+  background: rgba(6, 12, 20, .78);
+  color: #dff4ff;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+}
 
 /* ---- landing mock cards: cars + circuits ---- */
 .mock-garage { display: flex; flex-direction: column; gap: 10px; }
