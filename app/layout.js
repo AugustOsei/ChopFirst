@@ -45,8 +45,8 @@ export const metadata = {
     type: "website",
     locale: "en",
     images: [
-      { url: "/cover-accra.jpg", width: 1376, height: 768, alt: "CHOP FIRST — racing through Accra, Ghana" },
       { url: "/cover-orbital.jpg", width: 1376, height: 768, alt: "CHOP FIRST — the Orbital Highway space circuit" },
+      { url: "/cover-accra.jpg", width: 1376, height: 768, alt: "CHOP FIRST — racing through Accra, Ghana" },
     ],
   },
   twitter: {
@@ -54,7 +54,7 @@ export const metadata = {
     title: "CHOP FIRST — Free Browser Car Racing Game (Ghana)",
     description:
       "Drift a mountain touge or race the streets of Accra, Ghana. Set a time, send the link — friends have 24 hours to chop it.",
-    images: ["/cover-accra.jpg"],
+    images: ["/cover-orbital.jpg"],
   },
 };
 
@@ -68,7 +68,7 @@ const jsonLd = {
   description:
     "A free browser-based arcade car racing game. Drift a mountain touge, street-race through Accra, Ghana, or race a neon orbital highway in space. Set a lap time and challenge friends to beat it within 24 hours.",
   url: SITE_URL,
-  image: `${SITE_URL}/cover-accra.jpg`,
+  image: `${SITE_URL}/cover-orbital.jpg`,
   genre: ["Racing", "Arcade", "Driving"],
   gamePlatform: ["Web Browser"],
   applicationCategory: "Game",
