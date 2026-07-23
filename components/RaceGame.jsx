@@ -24,8 +24,11 @@ import {
   projectPointToTrack,
   setActiveTrack,
   TRACK,
+  wrapDistance,
 } from "../game/track";
-import { createVehicleState, getVehicleTransform, MAX_BOOST_CHARGES, updateVehicle } from "../game/vehicle";
+import { createVehicleState, getVehicleTransform, MAX_BOOST_CHARGES, resolveCarCollision, updateVehicle } from "../game/vehicle";
+import { ANANSE_PERSONALITY, createAiInput, getAnanseLine } from "../game/ai-driver";
+import AnanseFace from "./AnanseFace";
 import { createGameAudio } from "../game/audio";
 
 const INITIAL_RACE = {
@@ -115,13 +118,15 @@ const SPACE_THEME = {
 // over a distant plane and the road looks like it's hanging in mid-air.
 const GROUND_Y = -1.0;
 
-export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", trackId = "akina-ridge", onFinish, onQuit, onRestart, onReady }) {
+export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", trackId = "akina-ridge", arcadeMode = false, onFinish, onQuit, onRestart, onReady }) {
   // Activate the chosen track before the scene geometry and vehicle are built
   // from it below (this component renders before its RaceScene child).
   setActiveTrack(trackId);
   const theme = TRACK.environment === "space" ? SPACE_THEME : TIME_THEMES[timeOfDay] || TIME_THEMES.day;
   const inputRef = useRef({ left: false, right: false, gas: false, brake: false, handbrake: false, boost: false, fire: false });
   const [race, setRace] = useState(INITIAL_RACE);
+  const [ananseDialog, setAnanseDialog] = useState(null); // { line, event }
+
   const [showDebug, setShowDebug] = useState(false);
   const [paused, setPaused] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
@@ -181,7 +186,7 @@ export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", 
           </>
         )}
         {theme.space && <SpaceBackdrop />}
-        <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} onFinish={onFinish} setRace={setRace} showDebug={showDebug} pausedRef={pausedRef} audio={audio} ghostLabels={ghostLabels} headlights={theme.headlights} onReady={onReady} />
+        <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} arcadeMode={arcadeMode} onFinish={onFinish} setRace={setRace} setAnanseDialog={setAnanseDialog} showDebug={showDebug} pausedRef={pausedRef} audio={audio} ghostLabels={ghostLabels} headlights={theme.headlights} onReady={onReady} />
       </Canvas>
       <RaceHud race={race} driver={driver} muted={muted} onToggleMute={() => setMuted((value) => !value)} onPause={() => setPaused(true)} />
       <TouchControls controlsRef={inputRef} boosts={race.boosts} lasers={HAZARDS.length > 0} />
@@ -196,6 +201,14 @@ export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", 
         />
       )}
       {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
+      {arcadeMode && ananseDialog && (
+        <div className="ananse-hud-bubble">
+          <AnanseFace variant="portrait" size="small" />
+          <div className="ananse-speech-bubble">
+            <span>{ananseDialog.line}</span>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -234,9 +247,29 @@ function PauseOverlay({ onResume, onGuide, onQuit, onRestart, ghostLabels, onTog
   );
 }
 
-function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, showDebug, pausedRef, audio, ghostLabels, headlights, onReady }) {
+function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, onFinish, setRace, setAnanseDialog, showDebug, pausedRef, audio, ghostLabels, headlights, onReady }) {
   const car = useMemo(() => createVehicleState(driver?.vehicle), [driver?.vehicle]);
+  // Ananse AI car: spawns on the racing line a few metres BEHIND the player so
+  // the grid is staggered (player leads off the line) and neither car starts
+  // pinned to a rail. Offsetting sideways instead put it in the wall and the
+  // controller couldn't recover — see ai-driver.js. Distance offset is clean.
+  const ananseCar = useMemo(() => {
+    if (!arcadeMode) return null;
+    const ac = createVehicleState("street");
+    const spawnDistance = wrapDistance(ac.distance - 7);
+    const frame = getTrackFrame(spawnDistance);
+    const p = pointAt(spawnDistance, 0);
+    ac.position.set(p.x, p.y + ac.tuning.RIDE_HEIGHT, p.z);
+    ac.yaw = Math.atan2(frame.tangent.x, frame.tangent.z);
+    ac.distance = spawnDistance;
+    ac.lateral = 0;
+    return ac;
+  }, [arcadeMode]);
+  // carRef must be declared before anansCarRef — JSX order matches declaration order
   const carRef = useRef(null);
+  const anansCarRef = useRef(null);
+  // Ananse dialogue bubble state (managed via ref to avoid re-renders in the loop)
+  const ananseDialogRef = useRef({ line: null, until: 0, lastEvent: null });
   const roadMessages = useMemo(
     () => (challenge?.messages || []).filter((note) => note.message).slice(-8),
     [challenge],
@@ -283,6 +316,45 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
       // brake button doesn't instantly cancel a reverse that's already built up
       const autoGasActive = input.autoGas && !input.brake && car.forwardSpeed > -1.5;
       updateVehicle(car, autoGasActive ? { ...input, gas: true } : input, dt);
+
+      // --- Ananse AI update
+      if (ananseCar) {
+        const aiInput = createAiInput(ananseCar, ANANSE_PERSONALITY);
+        updateVehicle(ananseCar, aiInput, dt);
+        resolveCarCollision(car, ananseCar);
+
+        // Dialogue events
+        const dlg = ananseDialogRef.current;
+        const now = car.timeMs;
+        const playerAhead = car.distance > ananseCar.distance || car.lap > ananseCar.lap;
+        const ananseAhead = ananseCar.distance > car.distance || ananseCar.lap > car.lap;
+        const onFinalLap = ananseCar.lap === TRACK.laps - 1 && dlg.lastEvent !== "final_lap";
+
+        let event = null;
+        if (onFinalLap) event = "final_lap";
+        else if (playerAhead && dlg.lastEvent === "winning") event = "overtaken";
+        else if (ananseAhead && dlg.lastEvent === "losing") event = "overtook";
+        else if (now > dlg.until + 8000) event = ananseAhead ? "winning" : "losing";
+
+        if (event) {
+          const line = getAnanseLine(event);
+          if (line && setAnanseDialog) {
+            dlg.line = line;
+            dlg.until = now + 5000;
+            dlg.lastEvent = event;
+            setAnanseDialog({ line, event });
+            setTimeout(() => setAnanseDialog(null), 5200);
+          }
+        }
+      }
+    }
+    // Keep Ananse's mesh synced every frame — including during the 3-2-1
+    // countdown, before the sim runs — so the car sits on the grid facing
+    // ahead instead of at the mesh's default origin/orientation.
+    if (ananseCar && anansCarRef.current) {
+      const at = getVehicleTransform(ananseCar);
+      anansCarRef.current.position.copy(at.position);
+      anansCarRef.current.rotation.set(0, at.yaw, 0);
     }
     const transform = getVehicleTransform(car);
 
@@ -404,6 +476,9 @@ function RaceScene({ inputRef, challenge, pbRun, driver, onFinish, setRace, show
       )}
       <Ghosts challenge={challenge} pbRun={pbRun} car={car} showLabels={ghostLabels} />
       <RaceCar ref={carRef} carState={car} color={driver?.color} headlights={headlights} vehicle={driver?.vehicle || "street"} />
+      {arcadeMode && ananseCar && (
+        <RaceCar ref={anansCarRef} carState={ananseCar} color="#7c3aed" headlights={headlights} vehicle="street" anansePaint />
+      )}
       <Particles ref={smokeRef} mode="smoke" count={70} />
       <Particles ref={sparksRef} mode="spark" count={60} />
       <Particles ref={skidRef} mode="skid" count={90} />
@@ -2901,10 +2976,10 @@ const WHEEL_LAYOUT = {
   trotro: { x: 0.96, fz: 1.72, rz: -1.78, r: 0.42 },
 };
 
-const RaceCar = forwardRef(function RaceCar({ carState, color, headlights, vehicle = "street" }, ref) {
+const RaceCar = forwardRef(function RaceCar({ carState, color, headlights, vehicle = "street", anansePaint = false }, ref) {
   const paint = color || "#d81f33";
-  // dark stripe on light paint, light stripe otherwise
-  const stripe = ["#e8ecef", "#f5b818"].includes(paint) ? "#14181d" : "#f4f7fa";
+  // Ananse's purple car gets a gold stripe; other cars get dark or light stripe
+  const stripe = anansePaint ? "#f0c040" : (["#e8ecef", "#f5b818"].includes(paint) ? "#14181d" : "#f4f7fa");
   const hover = vehicle === "hoverbike";
   const wheels = WHEEL_LAYOUT[vehicle] || WHEEL_LAYOUT.street;
   // Boost-jet placement and color: blue for the bike, orange exhaust for the rest.

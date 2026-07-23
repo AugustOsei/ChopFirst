@@ -517,6 +517,90 @@ export function getVehicleTransform(car) {
   return { position: car.position, yaw: car.yaw, frame };
 }
 
+// Car-to-car collision: OBB overlap test + separation impulse.
+// Call once per frame after both cars have been updated by updateVehicle.
+// CAR_HALF_LENGTH and CAR_HALF_WIDTH define each car's collision box.
+const CAR_HALF_LENGTH = 2.2;
+const CAR_HALF_WIDTH_COLL = CAR_HALF_WIDTH; // reuse the existing constant (1.1)
+
+export function resolveCarCollision(carA, carB) {
+  const dx = carB.position.x - carA.position.x;
+  const dz = carB.position.z - carA.position.z;
+  const distSq = dx * dx + dz * dz;
+  // Quick radius pre-check: max diagonal of each box is ~2.5m so 25m² is safe.
+  if (distSq > 25) return false;
+
+  // Project separation vector into each car's local axes to find OBB overlap.
+  const fwdA = forwardFromYaw(carA.yaw);
+  const rtA  = rightFromYaw(carA.yaw);
+  const fwdB = forwardFromYaw(carB.yaw);
+  const rtB  = rightFromYaw(carB.yaw);
+
+  // Separating axis theorem on 4 axes (2 per car).
+  // For each axis compute how much the boxes overlap; if any axis separates, no collision.
+  function overlapOnAxis(ax, az) {
+    // Project box A extent onto axis
+    const extA = Math.abs(fwdA.x * ax + fwdA.z * az) * CAR_HALF_LENGTH
+                + Math.abs(rtA.x  * ax + rtA.z  * az) * CAR_HALF_WIDTH_COLL;
+    // Project box B extent onto axis
+    const extB = Math.abs(fwdB.x * ax + fwdB.z * az) * CAR_HALF_LENGTH
+                + Math.abs(rtB.x  * ax + rtB.z  * az) * CAR_HALF_WIDTH_COLL;
+    // Distance between centres along axis
+    const dist = Math.abs(dx * ax + dz * az);
+    return extA + extB - dist; // positive = overlap, negative = gap
+  }
+
+  const axes = [
+    [fwdA.x, fwdA.z],
+    [rtA.x,  rtA.z],
+    [fwdB.x, fwdB.z],
+    [rtB.x,  rtB.z],
+  ];
+
+  let minOverlap = Infinity;
+  let sepX = 0, sepZ = 0;
+
+  for (const [ax, az] of axes) {
+    const overlap = overlapOnAxis(ax, az);
+    if (overlap <= 0) return false; // separating axis found — no collision
+    if (overlap < minOverlap) {
+      minOverlap = overlap;
+      // Separation axis points from A toward B
+      const sign = (dx * ax + dz * az) >= 0 ? 1 : -1;
+      sepX = ax * sign;
+      sepZ = az * sign;
+    }
+  }
+
+  // Push cars apart so they no longer overlap.
+  const half = minOverlap * 0.5;
+  carA.position.x -= sepX * half;
+  carA.position.z -= sepZ * half;
+  carB.position.x += sepX * half;
+  carB.position.z += sepZ * half;
+
+  // Exchange velocity components along the separation axis (elastic-ish impulse).
+  // We use a restitution of 0.35 — enough to feel like a bump, not a billiard shot.
+  const RESTITUTION = 0.35;
+  const vAlong_A = carA.velocity.x * sepX + carA.velocity.z * sepZ;
+  const vAlong_B = carB.velocity.x * sepX + carB.velocity.z * sepZ;
+
+  // Only resolve if cars are closing (vA > vB along sep axis means A is chasing B)
+  if (vAlong_A <= vAlong_B) return true;
+
+  const impulse = (vAlong_A - vAlong_B) * (1 + RESTITUTION) * 0.5;
+  carA.velocity.x -= impulse * sepX;
+  carA.velocity.z -= impulse * sepZ;
+  carB.velocity.x += impulse * sepX;
+  carB.velocity.z += impulse * sepZ;
+
+  // Register a light impact on both cars so the camera shake fires.
+  carA.impact = Math.max(carA.impact, Math.min(0.6, Math.abs(impulse) / 12));
+  carB.impact = Math.max(carB.impact, Math.min(0.6, Math.abs(impulse) / 12));
+
+  return true;
+}
+
 function forwardFromYaw(yaw) {
   return new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
 }

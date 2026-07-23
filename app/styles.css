@@ -3672,3 +3672,354 @@ kbd {
     text-shadow: 0 0 12px rgba(255, 69, 58, .8);
   }
 }
+
+/* =====================================================================
+   ARCADE MODE — Ananse lobby, track select, in-race bubble
+   ===================================================================== */
+
+/* ---- Mode select screen ---- */
+.mode-select-screen { /* inherits .garage-screen background */ }
+
+.mode-inner {
+  max-width: 780px;
+  margin: 0 auto;
+}
+
+.mode-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-top: 8px;
+}
+
+.mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  background: rgba(255,255,255,.04);
+  border: 1.5px solid rgba(255,255,255,.1);
+  border-radius: 16px;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .2s, transform .2s, box-shadow .2s;
+  position: relative;
+}
+.mode-card:hover {
+  border-color: rgba(255,255,255,.28);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 40px rgba(0,0,0,.5);
+}
+
+/* Time Attack — dark teal accent */
+.mode-card-time {
+  border-color: rgba(72,199,190,.3);
+}
+.mode-card-time:hover { border-color: #48c7be; box-shadow: 0 12px 40px rgba(72,199,190,.18); }
+.mode-card-time .mode-card-cta { color: #48c7be; }
+
+/* Arcade — purple accent */
+.mode-card-arcade {
+  border-color: rgba(124,58,237,.4);
+}
+.mode-card-arcade:hover { border-color: #7c3aed; box-shadow: 0 12px 40px rgba(124,58,237,.25); }
+.mode-card-arcade .mode-card-cta { color: #b87eff; }
+
+/* Illustrated art header shared by both cards */
+.mode-card-art {
+  width: 100%;
+  height: 180px;
+  overflow: hidden;
+  position: relative;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.mode-card-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform .35s ease;
+}
+.mode-card:hover .mode-card-art img { transform: scale(1.05); }
+
+/* the Ananse portrait is square with the face high — bias the crop upward so
+   the head, not the chest, fills the card header */
+.mode-card-art-ananse img { object-position: 50% 22%; }
+
+/* corner badge over the art */
+.mode-card-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(0,0,0,.6);
+  color: #d7f6f2;
+  border: 1px solid rgba(72,199,190,.5);
+  backdrop-filter: blur(4px);
+}
+.mode-card-badge-vs {
+  color: #fff;
+  background: rgba(124,58,237,.85);
+  border-color: rgba(184,126,255,.7);
+}
+
+.mode-card-body {
+  padding: 18px 20px 8px;
+  flex: 1;
+}
+
+.mode-card-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: #f4f7fa;
+  margin: 0 0 8px;
+  letter-spacing: .02em;
+}
+
+.mode-card-desc {
+  font-size: 13px;
+  color: rgba(196,210,222,.8);
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+
+.mode-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.mode-card-tags span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: rgba(196,210,222,.55);
+  background: rgba(255,255,255,.06);
+  border-radius: 4px;
+  padding: 3px 8px;
+}
+
+.mode-card-cta {
+  display: block;
+  padding: 14px 20px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  width: 100%;
+  border-top: 1px solid rgba(255,255,255,.07);
+}
+
+@media (max-width: 620px) {
+  .mode-cards { grid-template-columns: 1fr; }
+  .mode-card-art { height: 150px; }
+}
+
+/* ---- Arcade lobby split layout ---- */
+.arcade-lobby-screen { /* inherits .garage-screen */ }
+
+.arcade-split {
+  display: grid;
+  grid-template-columns: 0.85fr 1.15fr;
+  gap: 24px;
+  align-items: start;
+  margin-bottom: 16px;
+}
+
+/* small uppercase label that heads each side of the split */
+.arcade-side-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: rgba(196,210,222,.5);
+  margin: 0 0 12px;
+}
+.arcade-ananse-side .arcade-side-label { color: rgba(212,160,23,.75); }
+
+/* ---- Ananse's side ---- */
+.arcade-ananse-side {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  padding: 18px;
+  background: radial-gradient(120% 90% at 50% 0%, rgba(124,58,237,.14), rgba(0,0,0,.4));
+  border-radius: 16px;
+  border: 1px solid rgba(212, 160, 23, .28);
+  position: relative;
+}
+
+/* framed hero image of Ananse by his car, with a name plate over the bottom */
+.ananse-hero-wrap {
+  position: relative;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(212,160,23,.22);
+  background: #140a24;
+}
+.ananse-hero-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+}
+.ananse-hero-plate {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 24px 14px 10px;
+  text-align: center;
+  background: linear-gradient(0deg, rgba(10,6,20,.92), rgba(10,6,20,0));
+}
+.ananse-name {
+  display: block;
+  font-size: 22px;
+  font-weight: 800;
+  color: #f0c040;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.ananse-sub {
+  display: block;
+  font-size: 10.5px;
+  color: rgba(255,255,255,.6);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  margin-top: 3px;
+}
+
+/* Speech bubble in lobby — sits under the hero, tail pointing up-left */
+.ananse-lobby-bubble {
+  background: rgba(20, 10, 0, .78);
+  border: 1px solid rgba(212, 160, 23, .4);
+  border-radius: 4px 12px 12px 12px;
+  padding: 11px 14px;
+  font-size: 13px;
+  color: #f4ead0;
+  font-style: italic;
+  line-height: 1.45;
+  position: relative;
+  text-align: left;
+  animation: bubble-in .25s ease;
+}
+.ananse-lobby-bubble::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: 18px;
+  border: 8px solid transparent;
+  border-bottom-color: rgba(212, 160, 23, .4);
+}
+
+/* ---- Player's side in arcade lobby ---- */
+.arcade-player-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* note above the arcade track picker explaining the single available circuit */
+.arcade-track-note {
+  font-size: 12.5px;
+  color: rgba(240,192,64,.85);
+  background: rgba(124,58,237,.1);
+  border: 1px solid rgba(240,192,64,.22);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 0 0 12px;
+  line-height: 1.4;
+}
+
+/* locked track card — dimmed, non-interactive, with a "coming soon" overlay */
+.track-card.locked {
+  cursor: default;
+  filter: grayscale(0.7);
+  opacity: 0.5;
+  position: relative;
+}
+.track-card.locked:hover { transform: none; border-color: rgba(255,255,255,.1); }
+.track-lock-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6,8,14,.35);
+  backdrop-filter: blur(1.5px);
+  border-radius: inherit;
+  pointer-events: none;
+}
+.track-lock-badge {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #eef2f6;
+  background: rgba(10,12,20,.85);
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 999px;
+  padding: 5px 12px;
+}
+
+.garage-hero-sm { height: 160px; }
+
+/* "Race Ananse" start button — tricolor gradient */
+.arcade-start-cta {
+  background: linear-gradient(90deg, #b8060f 0%, #d4a017 50%, #1a6b2a 100%) !important;
+  letter-spacing: .05em;
+  font-weight: 800;
+}
+
+/* ---- In-race Ananse HUD speech bubble ---- */
+.ananse-hud-bubble {
+  position: fixed;
+  bottom: 80px;
+  left: 16px;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  z-index: 60;
+  pointer-events: none;
+  animation: bubble-in .3s ease;
+}
+
+.ananse-speech-bubble {
+  background: rgba(10, 6, 0, .88);
+  border: 1.5px solid #d4a017;
+  border-radius: 12px 12px 12px 4px;
+  padding: 10px 14px;
+  max-width: 240px;
+  font-size: 13px;
+  color: #f4ead0;
+  font-style: italic;
+  line-height: 1.45;
+  box-shadow: 0 4px 20px rgba(0,0,0,.5);
+}
+
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(8px) scale(.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ---- Responsive: stack arcade lobby on small screens ---- */
+@media (max-width: 680px) {
+  .arcade-split {
+    grid-template-columns: 1fr;
+  }
+  /* on a phone the hero would eat the screen — cap its height and crop */
+  .ananse-hero-wrap { max-height: 260px; }
+  .ananse-hero-img { height: 260px; object-position: 50% 20%; }
+  .ananse-hud-bubble { bottom: 100px; left: 10px; }
+  .ananse-speech-bubble { max-width: 180px; font-size: 12px; }
+}
