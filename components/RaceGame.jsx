@@ -491,7 +491,7 @@ function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, ananseSkill
       <Ghosts challenge={challenge} pbRun={pbRun} car={car} showLabels={ghostLabels} />
       <RaceCar ref={carRef} carState={car} color={driver?.color} headlights={headlights} vehicle={driver?.vehicle || "street"} />
       {arcadeMode && ananseCar && (
-        <RaceCar ref={anansCarRef} carState={ananseCar} color="#7c3aed" headlights={headlights} vehicle="street" anansePaint />
+        <RaceCar ref={anansCarRef} carState={ananseCar} color="#7c3aed" headlights={headlights} vehicle="street" anansePaint label="ANANSE THE AI" />
       )}
       <Particles ref={smokeRef} mode="smoke" count={70} />
       <Particles ref={sparksRef} mode="spark" count={60} />
@@ -2990,7 +2990,7 @@ const WHEEL_LAYOUT = {
   trotro: { x: 0.96, fz: 1.72, rz: -1.78, r: 0.42 },
 };
 
-const RaceCar = forwardRef(function RaceCar({ carState, color, headlights, vehicle = "street", anansePaint = false }, ref) {
+const RaceCar = forwardRef(function RaceCar({ carState, color, headlights, vehicle = "street", anansePaint = false, label = null }, ref) {
   const paint = color || "#d81f33";
   // Ananse's purple car gets a gold stripe; other cars get dark or light stripe
   const stripe = anansePaint ? "#f0c040" : (["#e8ecef", "#f5b818"].includes(paint) ? "#14181d" : "#f4f7fa");
@@ -3015,11 +3015,14 @@ const RaceCar = forwardRef(function RaceCar({ carState, color, headlights, vehic
   const coreLeft = useRef(null);
   const coreRight = useRef(null);
   const boostLight = useRef(null);
+  // floating name tag (arcade rival only) + a scratch vector for its distance fade
+  const labelRef = useRef(null);
+  const labelWorld = useMemo(() => new THREE.Vector3(), []);
   // headlight spotlight aims at this object, parked ahead of the nose in local
   // space so it sweeps with the car through corners
   const headlightTarget = useMemo(() => new THREE.Object3D(), []);
 
-  useFrame((_, dt) => {
+  useFrame((state, dt) => {
     const car = carState;
     if (!car) return;
     const speedT = Math.min(1, Math.abs(car.forwardSpeed) / 40);
@@ -3068,6 +3071,14 @@ const RaceCar = forwardRef(function RaceCar({ carState, color, headlights, vehic
       }
       if (boostLight.current) boostLight.current.intensity = boostK * 5;
     }
+
+    // Rival name tag: readable at racing range, but fades out when the chase
+    // cam is right on top of the car so it never crowds a recorded shot.
+    if (labelRef.current) {
+      labelRef.current.getWorldPosition(labelWorld);
+      const dist = state.camera.position.distanceTo(labelWorld);
+      labelRef.current.visible = dist > 6 && dist < 150;
+    }
   });
 
   return (
@@ -3093,6 +3104,13 @@ const RaceCar = forwardRef(function RaceCar({ carState, color, headlights, vehic
           )}
         </group>
       ))}
+      {label && (
+        <Billboard ref={labelRef} position={[0, 2.55, 0]}>
+          <Text fontSize={0.6} color="#c9a6ff" outlineWidth={0.055} outlineColor="#160a2e" anchorX="center" anchorY="bottom" letterSpacing={0.04}>
+            {label}
+          </Text>
+        </Billboard>
+      )}
       <pointLight ref={boostLight} position={[0, 0.7, flameSpec.z - 0.25]} color={flameSpec.color} intensity={0} distance={9} />
       {headlights && (
         <>
