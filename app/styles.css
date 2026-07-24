@@ -4002,12 +4002,17 @@ kbd {
 }
 
 /* ---- In-race Ananse HUD speech bubble ---- */
+/* Sits upper-left, just above the vertical middle: the racing sightline runs
+   from the car (bottom-centre) up the road to the horizon, and apexes appear
+   low-left/low-right — this height is empty scenery, clear of the stats bar
+   (top-centre), minimap (top-right), speedo and boost (bottom corners), and
+   the mobile thumb zone. */
 .ananse-hud-bubble {
   position: fixed;
-  bottom: 80px;
+  top: 32%;
   left: 16px;
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 10px;
   z-index: 60;
   pointer-events: none;
@@ -4017,7 +4022,7 @@ kbd {
 .ananse-speech-bubble {
   background: rgba(10, 6, 0, .88);
   border: 1.5px solid #d4a017;
-  border-radius: 12px 12px 12px 4px;
+  border-radius: 4px 12px 12px 12px;
   padding: 10px 14px;
   max-width: 240px;
   font-size: 13px;
@@ -4028,7 +4033,7 @@ kbd {
 }
 
 @keyframes bubble-in {
-  from { opacity: 0; transform: translateY(8px) scale(.96); }
+  from { opacity: 0; transform: translateY(-8px) scale(.96); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
@@ -4040,7 +4045,9 @@ kbd {
   /* on a phone the hero would eat the screen — cap its height and crop */
   .ananse-hero-wrap { max-height: 260px; }
   .ananse-hero-img { height: 260px; object-position: 50% 20%; }
-  .ananse-hud-bubble { bottom: 100px; left: 10px; }
+  /* phones: a touch higher — the viewport is shorter and the thumb controls
+     own the bottom half */
+  .ananse-hud-bubble { top: 27%; left: 10px; }
   .ananse-speech-bubble { max-width: 180px; font-size: 12px; }
 }
 
@@ -4065,10 +4072,15 @@ kbd {
   display: block;
   font-size: 1.05rem;
   margin-bottom: 3px;
+  color: #cdb4ff; /* lost: lavender pops on the purple tint */
+}
+
+.arcade-verdict.won b {
+  color: #8ff0b4; /* won: bright green on the green tint */
 }
 
 .arcade-verdict span {
-  opacity: .78;
+  color: rgba(244, 240, 230, .82);
   font-size: .9rem;
   font-style: italic;
   line-height: 1.35;
