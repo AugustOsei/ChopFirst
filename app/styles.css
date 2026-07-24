@@ -858,6 +858,26 @@ button {
   font-weight: 900;
 }
 
+/* tall art (Ananse) crops to a landscape-ish card instead of towering */
+.mock-media-img.is-portrait img {
+  max-height: 460px;
+  object-fit: cover;
+  object-position: 50% 8%;
+}
+
+/* Ananse quip tag on the arcade feature band */
+.ananse-tag {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  top: auto;
+  max-width: calc(100% - 28px);
+  background: rgba(124, 58, 237, .92);
+  color: #f6f0ff;
+  font-style: italic;
+  font-weight: 700;
+}
+
 /* closer */
 .closer {
   display: grid;
@@ -4022,4 +4042,34 @@ kbd {
   .ananse-hero-img { height: 260px; object-position: 50% 20%; }
   .ananse-hud-bubble { bottom: 100px; left: 10px; }
   .ananse-speech-bubble { max-width: 180px; font-size: 12px; }
+}
+
+/* ---- Arcade finish: verdict vs Ananse ---- */
+.arcade-verdict {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 14px 0 6px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(124, 58, 237, .12);
+  border: 1px solid rgba(124, 58, 237, .4);
+}
+
+.arcade-verdict.won {
+  background: rgba(31, 157, 85, .12);
+  border-color: rgba(31, 157, 85, .45);
+}
+
+.arcade-verdict b {
+  display: block;
+  font-size: 1.05rem;
+  margin-bottom: 3px;
+}
+
+.arcade-verdict span {
+  opacity: .78;
+  font-size: .9rem;
+  font-style: italic;
+  line-height: 1.35;
 }

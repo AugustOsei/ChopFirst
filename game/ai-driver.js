@@ -1,9 +1,10 @@
 // Ananse AI driver — lookahead racing line controller.
-// Call createAiInput(car, personality) each frame to get a synthetic input
-// object compatible with updateVehicle(). The personality object tunes
-// aggression so future opponents can feel distinct without changing this file.
+// Call createAiInput(car, personality, rival) each frame to get a synthetic
+// input object compatible with updateVehicle(). Pass the player's car as
+// `rival` to enable rubber-banding; the personality object tunes aggression so
+// future opponents can feel distinct without changing this file.
 
-import { getTrackFrame, pointAt, wrapDistance } from "./track.js";
+import { getTrackFrame, getTrackLength, pointAt, TRACK, wrapDistance } from "./track.js";
 
 // Default personality: Ananse. Tricky — runs a tight line, brakes late,
 // occasionally boosts. Slightly over-confident in fast corners.
@@ -14,31 +15,80 @@ import { getTrackFrame, pointAt, wrapDistance } from "./track.js";
 // This looks far enough ahead to load a corner early yet aims at an actual
 // point (not just a tangent), so it holds the line instead of understeering
 // wide into the outside rail — the failure the tangent-blend version had.
+//
+// Pace: rubber-banded off the live gap to the player so the race stays close
+// for slow and fast drivers alike. The corner planner keeps him safe whatever
+// the pace; the cruise band only caps how hard he runs the open road.
+//   close race  → raceCruise (~41 s laps on Akina)
+//   far behind  → up to maxCruise + real boost bursts (sub-38 s laps)
+//   far ahead   → eases toward minCruise (~45 s laps) so the player stays in it
+// Getting rammed hard flips him into a few seconds of push mode (max pace +
+// boost when the road opens) — the crash costs him, then he bites back.
 export const ANANSE_PERSONALITY = {
-  aimBase: 12,          // metres of lookahead at a standstill
-  aimPerSpeed: 0.42,    // extra lookahead metres per m/s of speed
-  aimMin: 10,           // never aim closer than this
-  aimMax: 40,           // …nor farther than this
-  targetLateral: 0,     // preferred lateral offset from centre (0 = centre line)
-  steerDeadzone: 0.02,  // bearing error (rad) below which we hold straight
-  curveThreshold: 0.05, // curvature at/under which a corner imposes no speed cap
-  cornerSpeed: 46,      // safe speed (m/s) for a corner right at the threshold
-  brakeSlope: 42,       // m/s shed per unit of curvature above the threshold
-  brakeDecel: 34,       // m/s² the planner assumes it can brake at (≈ real rate)
-  scanRange: 120,       // metres of track ahead scanned for corners
-  scanStep: 4,          // sample spacing for that scan
-  boostCurveCap: 0.03,  // only boost when the road just ahead is near-straight
+  aimBase: 12,             // metres of lookahead at a standstill
+  aimPerSpeed: 0.42,       // extra lookahead metres per m/s of speed
+  aimMin: 10,              // never aim closer than this
+  aimMax: 40,              // …nor farther than this
+  targetLateral: 0,        // preferred lateral offset from centre (0 = centre line)
+  steerDeadzone: 0.02,     // bearing error (rad) below which we hold straight
+  cornerConfidence: 0.85,  // fraction of the physically holdable corner speed he dares
+  minCornerSpeed: 10,      // m/s floor so hairpins are driven, not crawled
+  brakeDecel: 34,          // m/s² the planner assumes it can brake at (≈ real rate)
+  scanRange: 120,          // metres of track ahead scanned for corners
+  scanStep: 4,             // sample spacing for that scan
+  raceCruise: 36,          // m/s pace when the race is close (gap ≈ 0)
+  rubberBandGain: 0.15,    // m/s of pace shed/gained per metre ahead/behind
+  minCruise: 31,           // race-pace floor while the player is in touch
+  maxCruise: 46,           // flat-out ceiling when chasing (car top speed is 52)
+  pushGap: -12,            // more than this many metres behind → boost to catch up
+  crashPushMs: 3000,       // push-mode duration after taking a hard hit
+  mercyGap: 150,           // lead (m) beyond which he eases below minCruise…
+  mercyRate: 0.03,         // …shedding this much extra m/s per metre of lead
+  mercyMaxShed: 9,         // …down to at most minCruise−9 (≈ bronze pace)
+  boostMaxCurvature: 0.004, // only boost when the road ahead is straighter than R=250m
 };
 
 function normalizeAngle(a) {
   return Math.atan2(Math.sin(a), Math.cos(a));
 }
 
-// Safe speed for a given track curvature: sweepers keep most speed, tight
-// hairpins get crawled. Curvature at/under the threshold imposes no limit.
-function cornerSpeedFor(curvature, personality) {
-  if (curvature <= personality.curveThreshold) return Infinity;
-  return Math.max(8, personality.cornerSpeed - (curvature - personality.curveThreshold) * personality.brakeSlope);
+// Continuous race progress in metres, comparable between cars. Measured from
+// the start gate (not the spline origin) and bumped by startGatePassed so the
+// value is continuous at BOTH discontinuities: the spline wrap (distance→0,
+// ~60 m before the gate) and the gate itself (where lap increments).
+function raceProgress(car) {
+  const L = getTrackLength();
+  const fromGate = (car.distance - TRACK.startDistance + L) % L;
+  return (car.lap + (car.startGatePassed ? 1 : 0)) * L + fromGate;
+}
+
+// Real road curvature (1/metres) at a track distance, from the heading change
+// between two tangents a known arc length apart. The frame's `curvature` field
+// is NOT usable here: it's a render-tuned scalar (sin of the heading swing over
+// ~0.6% of the lap, ×9) whose magnitude depends on lap length — on Akina it
+// runs 0–6.5, two orders of magnitude off a true 1/R.
+function trackCurvature(distance, ds = 4) {
+  const a = getTrackFrame(wrapDistance(distance)).tangent;
+  const b = getTrackFrame(wrapDistance(distance + ds)).tangent;
+  const cross = a.x * b.z - a.z * b.x;
+  const dot = a.x * b.x + a.z * b.z;
+  return Math.abs(Math.atan2(cross, dot)) / ds;
+}
+
+// Max speed the bicycle model can physically hold through a corner of curvature
+// k, from the car's own tuning: steering lock shrinks with speed
+// (lock = MAX_STEER_LOCK / (1 + v·falloff)), and yaw rate is capped. Solve
+// tan(lock(v))·v/L = k·v for the lock limit and yawRate/v = k for the cap, take
+// the lower, and scale by how much of that limit this personality dares to use.
+function cornerSpeedFor(k, car, personality) {
+  if (k < 1e-4) return Infinity;
+  const t = car.tuning;
+  const falloff = TRACK.handling?.lockFalloff ?? 0.095;
+  const lockNeeded = Math.atan(k * t.WHEELBASE);
+  if (lockNeeded >= t.MAX_STEER_LOCK) return personality.minCornerSpeed;
+  const vLock = (t.MAX_STEER_LOCK / lockNeeded - 1) / falloff;
+  const vYaw = t.MAX_YAW_RATE / k;
+  return Math.max(personality.minCornerSpeed, personality.cornerConfidence * Math.min(vLock, vYaw));
 }
 
 // The heart of the throttle controller: look ahead point by point, and for each
@@ -52,8 +102,8 @@ function targetSpeedAhead(car, personality, brakeDecel) {
   const { scanRange, scanStep } = personality;
   let target = Infinity;
   for (let d = personality.aimMin * 0.4; d <= scanRange; d += scanStep) {
-    const c = Math.abs(getTrackFrame(wrapDistance(car.distance + d)).curvature);
-    const vSafe = cornerSpeedFor(c, personality);
+    const k = trackCurvature(car.distance + d, scanStep);
+    const vSafe = cornerSpeedFor(k, car, personality);
     if (vSafe === Infinity) continue;
     // Distance we'd still be travelling before reaching the corner mouth.
     const s = Math.max(0, d - personality.aimMin * 0.4);
@@ -64,7 +114,7 @@ function targetSpeedAhead(car, personality, brakeDecel) {
   return target;
 }
 
-export function createAiInput(car, personality = ANANSE_PERSONALITY) {
+export function createAiInput(car, personality = ANANSE_PERSONALITY, rival = null) {
   const {
     aimBase,
     aimPerSpeed,
@@ -72,10 +122,37 @@ export function createAiInput(car, personality = ANANSE_PERSONALITY) {
     aimMax,
     targetLateral,
     steerDeadzone,
-    boostCurveCap,
+    boostMaxCurvature,
   } = personality;
 
   const speed = car.forwardSpeed;
+  const ai = car.ai || (car.ai = { pwm: 0, pushUntil: 0 });
+
+  // --- Rubber band: pace off the live gap to the rival (in metres of total
+  // race distance; positive = we're ahead). A hard hit (car.impact is set by
+  // car-to-car collisions and heavy rail strikes) triggers push mode: a few
+  // seconds at max pace with boost, so ramming Ananse costs him the moment but
+  // provokes a counterattack instead of leaving him crippled.
+  // NOTE: lap*L + distance is NOT continuous — lap increments at the start
+  // gate while distance wraps at the spline origin ~60 m earlier (the same
+  // boundary dip the PB delta timer works around). raceProgress() is gate-
+  // aligned and continuous, so the gap never misreads by a lap length.
+  const gap = rival ? raceProgress(car) - raceProgress(rival) : 0;
+  if (car.impact > 0.25 && rival) ai.pushUntil = car.timeMs + personality.crashPushMs;
+  const pushing = ai.pushUntil > car.timeMs;
+  // Mercy band: once the lead passes mercyGap he keeps easing below minCruise
+  // (bounded by mercyMaxShed) so even bronze-pace players keep him in sight.
+  // Skilled players never open that lead at raceCruise, so they never see it.
+  const mercy = Math.min(
+    personality.mercyMaxShed,
+    Math.max(0, (gap - personality.mercyGap) * personality.mercyRate),
+  );
+  const cruise = pushing
+    ? personality.maxCruise
+    : Math.min(
+        personality.maxCruise,
+        Math.max(personality.minCruise, personality.raceCruise - gap * personality.rubberBandGain),
+      ) - mercy;
 
   // --- Steering: pure pursuit toward an aim point on the racing line.
   // The aim distance grows with speed so fast sections steer smoothly and slow
@@ -95,26 +172,37 @@ export function createAiInput(car, personality = ANANSE_PERSONALITY) {
   // wall (railSide > 0) we must steer LEFT. railSide < 0 is the mirror.
   const pinned = car.railSide !== 0 && Math.abs(car.lateral) > 3;
 
-  // Steering with hysteresis so it doesn't hunt. A binary L/R input around a
-  // tight deadzone snaps back and forth every frame near straight — the "zig
-  // zag". We keep steering the same way until the error clearly crosses to the
-  // other side (outer band), and only centre inside the tighter inner band.
-  // ai.steerDir persists on the car between frames.
-  const ai = car.ai || (car.ai = { steerDir: 0 });
-  let left, right;
+  // Steering: the input is a binary key, but holding it means FULL lock — at
+  // speed that constantly trips the drift state and saws the car left-right
+  // (the visible zig-zag). Instead, compute the *fraction* of available lock
+  // pure pursuit actually needs (its curvature is 2·sin(bearing)/aimDist) and
+  // duty-cycle the key so the smoothed steer input averages that fraction.
+  // The duty is boosted to compensate for steer centring (10/s) being faster
+  // than wind-on (3.3/s) in updateVehicle. ai.pwm carries the duty remainder
+  // across frames.
+  let left = false;
+  let right = false;
   if (pinned) {
     left = car.railSide > 0;
     right = car.railSide < 0;
-    ai.steerDir = left ? 1 : -1;
+    ai.pwm = 0;
+  } else if (Math.abs(bearingError) > steerDeadzone) {
+    const t = car.tuning;
+    const falloff = TRACK.handling?.lockFalloff ?? 0.095;
+    const lockAvail = t.MAX_STEER_LOCK / (1 + Math.abs(speed) * falloff);
+    const kPursuit = (2 * Math.sin(bearingError)) / aimDist;
+    const frac = Math.max(-1, Math.min(1, Math.atan(kPursuit * t.WHEELBASE) / lockAvail));
+    const windOn = TRACK.handling?.steerWindOn ?? 3.3;
+    const m = Math.abs(frac);
+    const duty = (10 * m) / (windOn + (10 - windOn) * m);
+    ai.pwm += duty;
+    if (ai.pwm >= 1) {
+      ai.pwm -= 1;
+      left = frac > 0;
+      right = frac < 0;
+    }
   } else {
-    const outer = steerDeadzone * 3;   // must exceed this to *start*/flip a turn
-    const inner = steerDeadzone;       // fall inside this to straighten up
-    if (bearingError > outer) ai.steerDir = 1;
-    else if (bearingError < -outer) ai.steerDir = -1;
-    else if (Math.abs(bearingError) < inner) ai.steerDir = 0;
-    // else: hold the previous steerDir (the dead band)
-    left = ai.steerDir > 0;
-    right = ai.steerDir < 0;
+    ai.pwm = 0;
   }
 
   // --- Throttle / brake: hold the speed the road ahead can take, with a coast
@@ -129,17 +217,23 @@ export function createAiInput(car, personality = ANANSE_PERSONALITY) {
   else if (over > 2.5) ai.braking = true;
   else if (over < 0.5) ai.braking = false;
   const brake = !!ai.braking && !pinned;
-  // Gas whenever not braking and still below the corner's ceiling — only a
-  // narrow coast band right at target keeps gas and brake from fighting. This
-  // keeps the straights flat-out instead of dawdling below the safe speed.
-  const gas = pinned || (!brake && over < -0.3 && speed < 60);
+  // Gas whenever not braking and below both the corner ceiling and the cruise
+  // band from the rubber band above. While a boost is burning (boostTimer set
+  // by updateVehicle) the cap lifts, otherwise the throttle cutoff would waste
+  // the charge — flames with no acceleration. Brakes stay planner-only: pace is
+  // shed by coasting, never by brake lights on an empty straight.
+  const boosting = car.boostTimer > 0;
+  const cruiseCap = boosting ? cruise + 12 : cruise;
+  const gas = pinned || (!brake && over < -0.3 && speed < cruiseCap);
 
-  // --- Boost: only when the road right ahead is genuinely open, at speed.
-  const nearCurve = Math.abs(getTrackFrame(wrapDistance(car.distance + 8)).curvature);
+  // --- Boost: only when chasing (well behind, or biting back after a hit) and
+  // the road right ahead is genuinely open — never to pad a lead.
+  const nearK = trackCurvature(car.distance + 8, 6);
   const boost = !pinned
+    && (pushing || gap < personality.pushGap)
     && car.boostCharges > 0
     && car.boostCooldown <= 0
-    && nearCurve < boostCurveCap
+    && nearK < boostMaxCurvature
     && targetSpeed > 45
     && speed > 30;
 

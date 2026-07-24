@@ -394,6 +394,15 @@ export default function Home() {
   }, [screen, raceKey]);
 
   function finishRace(run) {
+    // Arcade runs live in their own world: no PB write (they'd overwrite the
+    // Time Attack ghost), no challenge/leaderboard post, no share flow. The
+    // race against Ananse ends at the arcade verdict screen.
+    if (arcadeMode) {
+      logEvent("arcade_race_finished");
+      setResult(run);
+      setScreen("finish");
+      return;
+    }
     logEvent("race_finished");
     let stored = null;
     try {
@@ -552,8 +561,10 @@ export default function Home() {
               <RaceGame
                 key={raceKey}
                 driver={driver}
-                challenge={onThisTrack(challenge) ? challenge : null}
-                pbRun={pbRun}
+                // Arcade carries nothing over from Time Attack: no challenge
+                // ghosts/messages, no PB ghost, no PB delta timer.
+                challenge={arcadeMode ? null : onThisTrack(challenge) ? challenge : null}
+                pbRun={arcadeMode ? null : pbRun}
                 timeOfDay={timeOfDay}
                 trackId={selectedTrack}
                 arcadeMode={arcadeMode}
@@ -931,7 +942,41 @@ export default function Home() {
           );
         })()}
 
-        {screen === "finish" && result && (() => {
+        {screen === "finish" && result && arcadeMode && (() => {
+          const won = !result.ananse?.won;
+          const margin = result.ananse?.behindMeters ?? 0;
+          return (
+          <Panel>
+            <p className="eyebrow">Arcade — vs Ananse</p>
+            <h2>{formatTime(result.timeMs)}</h2>
+            <div className={`arcade-verdict ${won ? "won" : "lost"}`}>
+              <AnanseFace variant="portrait" size="small" />
+              <div>
+                <b>{won ? "You chopped Ananse!" : "Ananse takes it."}</b>
+                <span>
+                  {won
+                    ? margin > 0
+                      ? `“Ei! ${margin} metres?! Lucky. Very lucky. Rematch — right now.”`
+                      : "“Ei! Lucky. Very lucky. Rematch — right now.”"
+                    : "“I told you — I wrote the road. Run it back if you dare.”"}
+                </span>
+              </div>
+            </div>
+            <div className="stats-grid">
+              <span>Coins <b>{result.coins}</b></span>
+              <span>Drift <b>{result.driftScore}</b></span>
+              <span>Boosts used <b>{result.boostUses}</b></span>
+            </div>
+            <div className="finish-nav">
+              <button className="finish-nav-link" onClick={startArcadeRace}>↻ Rematch</button>
+              <button className="finish-nav-link muted" onClick={() => { setArcadeMode(false); setScreen("title"); }}>⌂ Home</button>
+            </div>
+            <button className="feedback-link" onClick={() => setShowFeedback(true)}>🐞 Report a bug or suggest a feature</button>
+          </Panel>
+          );
+        })()}
+
+        {screen === "finish" && result && !arcadeMode && (() => {
           const total = challenge?.runs?.length ?? 0;
           const rank = challenge ? challenge.runs.filter((r) => r.timeMs < result.timeMs).length + 1 : null;
           const shareReady = saveState === "saved";
@@ -1429,16 +1474,16 @@ function LandingPage({ challenge, onStart, onArcade, onGuide, onBoard, onFeedbac
         <div className="hero-scrim" />
         <div className="hero-inner">
           <h1 className="sr-only">
-            CHOP FIRST — a free, vibecoded browser car racing game set on a mountain touge, the streets of Accra, Ghana, and a neon orbital highway in space.
+            CHOP FIRST — a free, vibecoded browser car racing game set on a mountain touge, the streets of Accra, Ghana, and a neon orbital highway in space. Race 24-hour time attacks against your friends, or take on Ananse, a trash-talking AI rival, in Arcade mode.
           </h1>
-          <p className="eyebrow title-fade" style={{ animationDelay: ".15s" }}>24-hour touge time attack</p>
+          <p className="eyebrow title-fade" style={{ animationDelay: ".15s" }}>24-hour time attack · arcade vs Ananse the AI</p>
           <div className="brand-logo hero-logo" aria-label="CHOP FIRST">
             <span className="brand-chop logo-pop">CHOP</span>
             <span className="brand-first logo-pop" style={{ animationDelay: ".12s" }}>FIRST</span>
           </div>
           <div className="brand-strip hero-strip" aria-hidden />
           <p className="hero-tagline title-fade" style={{ animationDelay: ".5s" }}>
-            Pick your ride. Set a blistering time on the mountain, through Accra or out among the nebulas. Send the link — your friends get 24 hours to chop it, or admit you were faster.
+            Two ways to race. Set a blistering time on the mountain, through Accra or out among the nebulas, then give your friends 24 hours to chop it — or go bumper-to-bumper with Ananse, a trickster AI who brakes late and talks the whole way.
           </p>
           {challenge ? (
             <p className="challenge-pill hero-pill title-fade" style={{ animationDelay: ".65s" }}>
@@ -1468,16 +1513,16 @@ function LandingPage({ challenge, onStart, onArcade, onGuide, onBoard, onFeedbac
 
       {/* quick value strip */}
       <div className="value-strip">
+        <span><b>2 modes</b> · Time Attack & Arcade</span>
         <span><b>4 cars</b> to master</span>
         <span><b>3 circuits</b> · mountain, city & orbit</span>
         <span><b>Day · Dusk · Night</b></span>
         <span><b>Real drift physics</b></span>
-        <span><b>Ghosts with names</b></span>
       </div>
 
       <section className="features">
         <FeatureRow
-          eyebrow="The 24-hour duel"
+          eyebrow="Time Attack — the 24-hour duel"
           title="Send it. They've got a day to answer."
           body="Every run becomes a private leaderboard you share with one tap. Friends race your ghost, leave a message on the road, and try to chop your time. Reply late and the challenge revives — a good rivalry never expires."
           media={
@@ -1491,6 +1536,17 @@ function LandingPage({ challenge, onStart, onArcade, onGuide, onBoard, onFeedbac
         />
         <FeatureRow
           flip
+          eyebrow="Arcade — race Ananse"
+          title="A real rival in the other seat. He wants it."
+          body="Arcade mode puts Ananse the Spider on the grid next to you — a live AI driver, not a replay. He reads the gap and races you for it: brakes late into the hairpin, boosts down the straights, trades real paint when you lean on him — and if you spin him out, he comes back swinging. He talks the whole race. Beat him and he'll still claim he let you."
+          media={
+            <div className="mock-media-img is-portrait">
+              <img src="/feature-ananse.webp" alt="Ananse the Spider standing beside his purple and gold coupe" loading="lazy" />
+              <span className="ghost-tag ananse-tag">“You cannot beat Ananse. I wrote the road.”</span>
+            </div>
+          }
+        />
+        <FeatureRow
           eyebrow="Pick your ride"
           title="Four machines. Each one drives its own way."
           body="Line up the Street Coupe against a yellow Ghana Taxi, a high-roof Trotro that wallows like a real bus, and a hover speeder that floats on blue flame. Spin each one in 3D in the garage and read its stats before you commit."
@@ -1510,6 +1566,7 @@ function LandingPage({ challenge, onStart, onArcade, onGuide, onBoard, onFeedbac
           }
         />
         <FeatureRow
+          flip
           eyebrow="Three circuits"
           title="A mountain touge, the streets of Accra, and a highway in orbit."
           body="Carve the alpine Akina Ridge with its summit hairpin, thread the Accra City Run past flyovers and landmarks, or go flat-out on the Orbital Highway — a neon expressway orbiting a ringed gas giant under nebula light. Same chase-the-ghost rules, three completely different rhythms."
@@ -1525,7 +1582,6 @@ function LandingPage({ challenge, onStart, onArcade, onGuide, onBoard, onFeedbac
           }
         />
         <FeatureRow
-          flip
           eyebrow="Time of day"
           title="Bright noon, golden dusk, or midnight."
           body="Pick your mood before you launch. Night flips on real headlights that pool across the asphalt, glowing tail lights, and a sky full of stars. The same circuit, three completely different drives."
@@ -1538,6 +1594,7 @@ function LandingPage({ challenge, onStart, onArcade, onGuide, onBoard, onFeedbac
           }
         />
         <FeatureRow
+          flip
           eyebrow="Chase the gap"
           title="Every corner, measured against your best."
           body="A live gap timer ticks green when you're up and red when you're down — the exact feedback loop that makes 'one more run' irresistible. Cross the line and a medal tells you how close you are to gold."
@@ -1553,7 +1610,6 @@ function LandingPage({ challenge, onStart, onArcade, onGuide, onBoard, onFeedbac
           }
         />
         <FeatureRow
-          flip
           eyebrow="Learn the line"
           title="Braking boards, ghosts, and a living mountain."
           body="Countdown boards mark every braking point so you carry more speed each lap. Rival ghosts wear their names and times. Forests thicken, the road climbs to a summit hairpin and drops through an S-chicane built to be drifted."
@@ -1572,7 +1628,7 @@ function LandingPage({ challenge, onStart, onArcade, onGuide, onBoard, onFeedbac
           <span className="brand-chop">CHOP</span>
           <span className="brand-first">FIRST</span>
         </div>
-        <p>Free. No install. Set a time in the next two minutes.</p>
+        <p>Free. No install. Set a time — or take on Ananse — in the next two minutes.</p>
         <button className="primary hero-start" onClick={onStart}>{challenge ? "Take the challenge" : "Start racing"}</button>
         <div className="closer-links">
           <button onClick={() => setShowRivals(true)}>

@@ -319,7 +319,8 @@ function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, onFinish, s
 
       // --- Ananse AI update
       if (ananseCar) {
-        const aiInput = createAiInput(ananseCar, ANANSE_PERSONALITY);
+        // pass the player car so the rubber band knows the live gap
+        const aiInput = createAiInput(ananseCar, ANANSE_PERSONALITY, car);
         updateVehicle(ananseCar, aiInput, dt);
         resolveCarCollision(car, ananseCar);
 
@@ -449,6 +450,11 @@ function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, onFinish, s
 
     if (car.lap >= TRACK.laps) {
       finishedRef.current = true;
+      // Arcade verdict: whoever's total progress crossed the race distance
+      // first. If Ananse is still short of it when the player finishes, the
+      // player won by that many metres.
+      const raceLength = TRACK.laps * trackLength;
+      const ananseProgress = ananseCar ? raceProgress(ananseCar, trackLength) : 0;
       onFinish({
         name: driver.name || "Street Driver",
         photo: driver.photo,
@@ -458,6 +464,12 @@ function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, onFinish, s
         boostUses: car.boostUses,
         blasts: car.blasts,
         ghost: decimateGhost(car.ghost, 500),
+        ananse: ananseCar
+          ? {
+              won: ananseProgress >= raceLength,
+              behindMeters: Math.max(0, Math.round(raceLength - ananseProgress)),
+            }
+          : null,
       });
     }
   });
