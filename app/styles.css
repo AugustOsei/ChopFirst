@@ -1459,6 +1459,13 @@ textarea:focus {
   50% { opacity: .55; }
 }
 
+.minimap-ananse {
+  fill: #9d5bff;
+  stroke: #fff;
+  stroke-width: 0.9;
+  filter: drop-shadow(0 0 5px rgba(124, 58, 237, 1));
+}
+
 .wrong-way {
   position: absolute;
   top: 30%;

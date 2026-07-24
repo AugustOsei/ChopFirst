@@ -434,6 +434,7 @@ function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, ananseSkill
         roadMessage: flow.msg && car.timeMs < flow.msg.until ? flow.msg : null,
         wrongWay: flow.wrongWayTime > 0.7,
         mapPos: MINIMAP.toMap(car.position.x, car.position.z),
+        ananseMapPos: ananseCar ? MINIMAP.toMap(ananseCar.position.x, ananseCar.position.z) : null,
         debug: showDebug
           ? {
               speed: car.forwardSpeed,

@@ -104,6 +104,9 @@ export default function RaceHud({ race, driver, muted, onToggleMute, onPause }) 
           <polyline points={MINIMAP.points} className="minimap-road-casing" />
           <polyline points={MINIMAP.points} className="minimap-road" />
           <circle cx={MINIMAP.start.x} cy={MINIMAP.start.y} r="2.6" className="minimap-start" />
+          {race.ananseMapPos && (
+            <circle cx={race.ananseMapPos.x} cy={race.ananseMapPos.y} r="3.2" className="minimap-ananse" />
+          )}
           {race.mapPos && <circle cx={race.mapPos.x} cy={race.mapPos.y} r="3.4" className="minimap-car" />}
         </svg>
         <div className="progress-track">
