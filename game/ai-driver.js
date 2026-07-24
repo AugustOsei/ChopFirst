@@ -338,6 +338,17 @@ const TAKEN_OVERTAKE_LINES = [
   "That's the difference between driving and Ananse driving.",
 ];
 
+// Ananse has crossed the finish line first and parked at the line while the
+// player is still out on track — one last word, then he goes quiet.
+const FINISHED_LINES = [
+  "Chale, I'm parked already. Take your time — I'll wait.",
+  "Finished. First. As always. I'll keep the engine warm for your excuses.",
+  "The web closed at the line. I'm on the other side of it. Waiting.",
+  "Done o. Now I get to watch YOU finish. Very educational.",
+  "Ananse has crossed. The rest of the road can fight for second.",
+  "I'll be right here at the line — chopping first, resting easy.",
+];
+
 // Finish-screen verdicts. {m} in a defeat line is replaced with the winning
 // margin in metres when we have one.
 const DEFEAT_LINES = [ // the player beat him
@@ -385,6 +396,7 @@ export function getAnanseLine(event) {
     case "final_lap":     return pickFresh("final_lap", FINAL_LAP_LINES);
     case "overtaken":     return pickFresh("overtaken", OVERTAKE_LINES);
     case "overtook":      return pickFresh("overtook", TAKEN_OVERTAKE_LINES);
+    case "finished":      return pickFresh("finished", FINISHED_LINES);
     default:              return null;
   }
 }

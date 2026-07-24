@@ -291,14 +291,16 @@ function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, ananseSkill
   // Debug hooks for manual/scripted driving QA.
   useEffect(() => {
     window.__carState = car;
+    window.__ananseCar = ananseCar;
     window.__scene = scene;
     window.__camera = camera;
     return () => {
       if (window.__carState === car) delete window.__carState;
+      if (window.__ananseCar === ananseCar) delete window.__ananseCar;
       if (window.__scene === scene) delete window.__scene;
       if (window.__camera === camera) delete window.__camera;
     };
-  }, [car, scene, camera]);
+  }, [car, ananseCar, scene, camera]);
 
   useFrame((_, delta) => {
     // first rendered frame = the scene is built and drawing; tell the shell to drop
@@ -319,33 +321,65 @@ function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, ananseSkill
 
       // --- Ananse AI update
       if (ananseCar) {
-        // pass the player car so the rubber band knows the live gap
-        const personality = ANANSE_DIFFICULTIES[ananseSkill] || ANANSE_PERSONALITY;
-        const aiInput = createAiInput(ananseCar, personality, car);
-        updateVehicle(ananseCar, aiInput, dt);
-        resolveCarCollision(car, ananseCar);
-
-        // Dialogue events
         const dlg = ananseDialogRef.current;
-        const now = car.timeMs;
-        const playerAhead = car.distance > ananseCar.distance || car.lap > ananseCar.lap;
-        const ananseAhead = ananseCar.distance > car.distance || ananseCar.lap > car.lap;
-        const onFinalLap = ananseCar.lap === TRACK.laps - 1 && dlg.lastEvent !== "final_lap";
+        // Once Ananse crosses the final line he's won the race (the player is
+        // still out here, or the loop would have ended). Stop racing: brake to
+        // a halt at the line rather than lapping forever, and hand him one
+        // conclusive taunt — after which he stays parked and silent.
+        if (ananseCar.lap >= TRACK.laps) {
+          const stopInput = {
+            left: false,
+            right: false,
+            gas: false,
+            // brake only while still rolling; releasing near standstill avoids
+            // the sustained-brake-into-reverse behaviour and lets him settle.
+            brake: ananseCar.forwardSpeed > 1.5,
+            boost: false,
+            handbrake: false,
+            autoGas: false,
+          };
+          updateVehicle(ananseCar, stopInput, dt);
+          resolveCarCollision(car, ananseCar);
 
-        let event = null;
-        if (onFinalLap) event = "final_lap";
-        else if (playerAhead && dlg.lastEvent === "winning") event = "overtaken";
-        else if (ananseAhead && dlg.lastEvent === "losing") event = "overtook";
-        else if (now > dlg.until + 8000) event = ananseAhead ? "winning" : "losing";
+          if (!dlg.finished) {
+            dlg.finished = true;
+            const line = getAnanseLine("finished");
+            if (line && setAnanseDialog) {
+              dlg.line = line;
+              dlg.until = car.timeMs + 6000;
+              dlg.lastEvent = "finished";
+              setAnanseDialog({ line, event: "finished" });
+              setTimeout(() => setAnanseDialog(null), 6200);
+            }
+          }
+        } else {
+          // pass the player car so the rubber band knows the live gap
+          const personality = ANANSE_DIFFICULTIES[ananseSkill] || ANANSE_PERSONALITY;
+          const aiInput = createAiInput(ananseCar, personality, car);
+          updateVehicle(ananseCar, aiInput, dt);
+          resolveCarCollision(car, ananseCar);
 
-        if (event) {
-          const line = getAnanseLine(event);
-          if (line && setAnanseDialog) {
-            dlg.line = line;
-            dlg.until = now + 5000;
-            dlg.lastEvent = event;
-            setAnanseDialog({ line, event });
-            setTimeout(() => setAnanseDialog(null), 5200);
+          // Dialogue events
+          const now = car.timeMs;
+          const playerAhead = car.distance > ananseCar.distance || car.lap > ananseCar.lap;
+          const ananseAhead = ananseCar.distance > car.distance || ananseCar.lap > car.lap;
+          const onFinalLap = ananseCar.lap === TRACK.laps - 1 && dlg.lastEvent !== "final_lap";
+
+          let event = null;
+          if (onFinalLap) event = "final_lap";
+          else if (playerAhead && dlg.lastEvent === "winning") event = "overtaken";
+          else if (ananseAhead && dlg.lastEvent === "losing") event = "overtook";
+          else if (now > dlg.until + 8000) event = ananseAhead ? "winning" : "losing";
+
+          if (event) {
+            const line = getAnanseLine(event);
+            if (line && setAnanseDialog) {
+              dlg.line = line;
+              dlg.until = now + 5000;
+              dlg.lastEvent = event;
+              setAnanseDialog({ line, event });
+              setTimeout(() => setAnanseDialog(null), 5200);
+            }
           }
         }
       }
