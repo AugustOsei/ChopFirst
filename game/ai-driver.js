@@ -48,6 +48,39 @@ export const ANANSE_PERSONALITY = {
   boostMaxCurvature: 0.004, // only boost when the road ahead is straighter than R=250m
 };
 
+// Difficulty presets: same driver brain, different appetite. Only pace fields
+// change — steering and the corner planner stay identical, so every level
+// drives smoothly and the differences read as confidence, not competence.
+//   easy   ≈ bronze pace: hangs with new players, almost never boosts
+//   medium ≈ silver pace: the shipped default — honest fight, keeps it close
+//   hard   ≈ gold+ pace : barely any mercy, boosts on sight, brakes later
+export const ANANSE_DIFFICULTIES = {
+  easy: {
+    ...ANANSE_PERSONALITY,
+    raceCruise: 30,
+    rubberBandGain: 0.18,
+    minCruise: 25,
+    maxCruise: 36,
+    pushGap: -60,
+    mercyGap: 90,
+    mercyMaxShed: 8,
+    cornerConfidence: 0.8,
+  },
+  medium: ANANSE_PERSONALITY,
+  hard: {
+    ...ANANSE_PERSONALITY,
+    raceCruise: 42,
+    rubberBandGain: 0.12,
+    minCruise: 38,
+    maxCruise: 50,
+    pushGap: -8,
+    mercyGap: 350,
+    mercyMaxShed: 4,
+    cornerConfidence: 0.92,
+    brakeDecel: 36,
+  },
+};
+
 function normalizeAngle(a) {
   return Math.atan2(Math.sin(a), Math.cos(a));
 }
@@ -170,7 +203,10 @@ export function createAiInput(car, personality = ANANSE_PERSONALITY, rival = nul
   // That assist only kicks in when steer * railSide > 0 (see vehicle.js): +steer
   // (a LEFT input) pushes the car toward -lateral, so to peel off the +lateral
   // wall (railSide > 0) we must steer LEFT. railSide < 0 is the mirror.
-  const pinned = car.railSide !== 0 && Math.abs(car.lateral) > 3;
+  // ONLY at crawl speed: at race speed the cushion + pursuit recover on their
+  // own, and forcing full lock here turned every wall kiss into a full-lock
+  // ping-pong between the two rails (the mid-straight zig-zag).
+  const pinned = car.railSide !== 0 && Math.abs(car.lateral) > 3 && speed < 10;
 
   // Steering: the input is a binary key, but holding it means FULL lock — at
   // speed that constantly trips the drift state and saws the car left-right
@@ -191,7 +227,16 @@ export function createAiInput(car, personality = ANANSE_PERSONALITY, rival = nul
     const falloff = TRACK.handling?.lockFalloff ?? 0.095;
     const lockAvail = t.MAX_STEER_LOCK / (1 + Math.abs(speed) * falloff);
     const kPursuit = (2 * Math.sin(bearingError)) / aimDist;
-    const frac = Math.max(-1, Math.min(1, Math.atan(kPursuit * t.WHEELBASE) / lockAvail));
+    // Yaw-rate damping: kPursuit alone is a pure P-controller and rings after
+    // a big disturbance (a shove from the player, a wall kiss) — the car snaps
+    // past centre and corrects the other way, over and over. Trim the demanded
+    // curvature by the EXCESS yaw rate over what this curvature needs; in a
+    // steady corner (yawVel == v·k) the term vanishes, so clean cornering is
+    // untouched while post-impact swings settle in one cycle.
+    const vc = Math.max(8, Math.abs(speed));
+    const excessYaw = car.yawVelocity - speed * kPursuit;
+    const kCmd = kPursuit - excessYaw / vc;
+    const frac = Math.max(-1, Math.min(1, Math.atan(kCmd * t.WHEELBASE) / lockAvail));
     const windOn = TRACK.handling?.steerWindOn ?? 3.3;
     const m = Math.abs(frac);
     const duty = (10 * m) / (windOn + (10 - windOn) * m);
@@ -248,6 +293,11 @@ const WINNING_LINES = [
   "I am not driving. I am dancing. You are… struggling.",
   "You cannot beat Ananse. I wrote the road.",
   "Ha! Keep chasing. The view from behind is educational.",
+  "Chale, I can see you in my mirror. Small small, you'll get there.",
+  "I've counted the coins on this road twice already. Still waiting for you.",
+  "Is your gas pedal shy? Press it. Press it hard.",
+  "Even the mountain is bored of watching you chase me.",
+  "Take your time o. The finish line and I are old friends.",
 ];
 const LOSING_LINES = [
   "Hmm. I am… warming up. Don't laugh.",
@@ -255,36 +305,94 @@ const LOSING_LINES = [
   "I tripped on a corner. It won't happen twice. Or three times.",
   "Okay okay okay. Ananse does not panic. Watch.",
   "Enjoy it now. The web closes at the finish line.",
+  "Herh! Who taught you to drive like that?!",
+  "I let you lead. Stories need suspense. Ask anyone.",
+  "The road is lying to you. It loves me more.",
+  "Small mistake. Even spiders slip on their own web. Once.",
+  "Enjoy the front. I'm back here studying your weaknesses.",
 ];
 const FINAL_LAP_LINES = [
   "Last lap. This is where the story ends — your story.",
   "Final lap! The spider springs the trap.",
   "One lap left. Time to show what Ananse is really made of.",
+  "One more lap. The web is already spun.",
+  "Final lap, chale. This is where legends are made — by me.",
+  "Last lap! I hope you saved nothing, because I saved everything.",
 ];
 const OVERTAKE_LINES = [
   "Ei! You got lucky. Very lucky.",
   "Was that… a pass? On ME? Unacceptable.",
   "Fine. You have speed. I have cunning. We will see.",
+  "Herh! Did you just—? Okay. OKAY.",
+  "Enjoy that one. Frame it. It won't happen again.",
+  "Even the referee didn't see that coming. Impressive. Annoying.",
+  "Bold. Very bold. The spider remembers everything.",
 ];
 const TAKEN_OVERTAKE_LINES = [
   "Back where I belong. Did you miss me?",
   "That's it. That's the line. Thank you for holding it warm.",
   "And just like that — Ananse is home.",
+  "Excuse me — coming through. Official business.",
+  "You held that position well. For a while.",
+  "See how smooth? Not even the wind noticed me pass.",
+  "That's the difference between driving and Ananse driving.",
 ];
 
-function pickRandom(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
+// Finish-screen verdicts. {m} in a defeat line is replaced with the winning
+// margin in metres when we have one.
+const DEFEAT_LINES = [ // the player beat him
+  "Ei! {m} metres?! Lucky. Very lucky. Rematch — right now.",
+  "Fine. FINE. You won. The road was slippery. My shoe was loose. Rematch.",
+  "You beat the spider… today. Tomorrow the web is tighter.",
+  "Chale… okay. That was real driving. Don't let it enter your head.",
+  "I demand a recount. And a rematch. Mostly a rematch.",
+  "You chopped first. But the pot is still full — run it back.",
+  "Impressive. I taught you well. Yes — I am taking the credit.",
+];
+const VICTORY_LINES = [ // Ananse took the win
+  "I told you — I wrote the road. Run it back if you dare.",
+  "The web closed at the finish line. Just as I said it would.",
+  "Don't be sad. Losing to Ananse is a rite of passage.",
+  "You drove well! I drove like Ananse. There is no shame… okay, small shame.",
+  "The mountain has spoken, and it said my name.",
+  "One more? I'll even pretend to be worried this time.",
+  "Delete this race from your memory. I'll keep it in mine forever.",
+];
+
+// Shuffle-bag picker: deals every line in a pool in random order before any
+// repeats, and remembers across races in the session — so back-to-back
+// rematches hear fresh material instead of the same three favourites.
+const decks = new Map();
+function pickFresh(key, pool) {
+  let deck = decks.get(key);
+  if (!deck || deck.length === 0) {
+    deck = [...pool];
+    for (let i = deck.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    decks.set(key, deck);
+  }
+  return deck.pop();
 }
 
 // Call this from the game loop when notable events happen.
 // Returns a quip string or null if nothing to say right now.
 export function getAnanseLine(event) {
   switch (event) {
-    case "winning":       return pickRandom(WINNING_LINES);
-    case "losing":        return pickRandom(LOSING_LINES);
-    case "final_lap":     return pickRandom(FINAL_LAP_LINES);
-    case "overtaken":     return pickRandom(OVERTAKE_LINES);
-    case "overtook":      return pickRandom(TAKEN_OVERTAKE_LINES);
+    case "winning":       return pickFresh("winning", WINNING_LINES);
+    case "losing":        return pickFresh("losing", LOSING_LINES);
+    case "final_lap":     return pickFresh("final_lap", FINAL_LAP_LINES);
+    case "overtaken":     return pickFresh("overtaken", OVERTAKE_LINES);
+    case "overtook":      return pickFresh("overtook", TAKEN_OVERTAKE_LINES);
     default:              return null;
   }
+}
+
+// Finish-screen line: playerWon is from the player's perspective;
+// marginMeters is how far short of the finish Ananse was when the player won.
+export function getAnanseFinishLine(playerWon, marginMeters = 0) {
+  const line = playerWon ? pickFresh("defeat", DEFEAT_LINES) : pickFresh("victory", VICTORY_LINES);
+  // photo finishes still deserve a number to complain about
+  return line.replace("{m}", String(Math.max(1, Math.round(marginMeters))));
 }

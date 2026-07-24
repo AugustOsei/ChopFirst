@@ -12,6 +12,7 @@ import { AD_SECONDS, pickAd } from "../lib/ads";
 import { TRACK, listTracks, setActiveTrack } from "../game/track";
 import { listVehicles, vehicleStats, DEFAULT_VEHICLE } from "../game/vehicle";
 import AnanseFace from "../components/AnanseFace";
+import { getAnanseFinishLine } from "../game/ai-driver";
 
 // Live 3D garage preview is client-only (R3F Canvas can't server-render).
 const GaragePreview = dynamic(() => import("../components/GaragePreview"), { ssr: false });
@@ -172,6 +173,17 @@ export default function Home() {
   const [screen, setScreen] = useState("title");
   const [arcadeStep, setArcadeStep] = useState("lobby"); // "lobby" | "track"
   const [ananseLine, setAnanseLine] = useState(null); // current Ananse quip on lobby/track screen
+  // Arcade difficulty: how hard Ananse races. Persisted so returning players
+  // keep their chosen challenge level.
+  const [ananseSkill, setAnanseSkillState] = useState(() => {
+    if (typeof window === "undefined") return "medium";
+    const stored = localStorage.getItem("chopfirst.ananseSkill");
+    return ["easy", "medium", "hard"].includes(stored) ? stored : "medium";
+  });
+  function setAnanseSkill(level) {
+    setAnanseSkillState(level);
+    try { localStorage.setItem("chopfirst.ananseSkill", level); } catch { /* private mode */ }
+  }
   const [arcadeMode, setArcadeMode] = useState(false); // true when racing with Ananse AI
   const [driver, setDriver] = useState({ name: "", photo: "", color: CAR_COLORS[0].id, vehicle: DEFAULT_VEHICLE, track: "akina-ridge" });
   const [raceKey, setRaceKey] = useState(0);
@@ -399,7 +411,8 @@ export default function Home() {
     // race against Ananse ends at the arcade verdict screen.
     if (arcadeMode) {
       logEvent("arcade_race_finished");
-      setResult(run);
+      // pick the verdict quip once, here, so re-renders don't reshuffle it
+      setResult({ ...run, ananseLine: getAnanseFinishLine(!run.ananse?.won, run.ananse?.behindMeters ?? 0) });
       setScreen("finish");
       return;
     }
@@ -568,6 +581,7 @@ export default function Home() {
                 timeOfDay={timeOfDay}
                 trackId={selectedTrack}
                 arcadeMode={arcadeMode}
+                ananseSkill={ananseSkill}
                 onFinish={finishRace}
                 onQuit={() => { setArcadeMode(false); setScreen("title"); }}
                 onReady={() => setRaceReady(true)}
@@ -744,6 +758,37 @@ export default function Home() {
                       </>
                     ) : (
                       <>
+                        <div className="arcade-skill-row">
+                          <span className="section-label">Ananse&apos;s pace</span>
+                          <div className="mode-row">
+                            {[
+                              ["easy", "Cruising", "He'll keep it friendly."],
+                              ["medium", "Race pace", "An honest fight."],
+                              ["hard", "Full trickster", "Gold-medal pace. Good luck."],
+                            ].map(([id, label]) => (
+                              <button
+                                key={id}
+                                type="button"
+                                className={`mode-chip${ananseSkill === id ? " selected" : ""}`}
+                                onClick={() => {
+                                  setAnanseSkill(id);
+                                  setAnanseLine(
+                                    id === "easy" ? "Cruising? Fine. I'll drive with one hand." :
+                                    id === "hard" ? "Full trickster?! Chale… remember, you asked for this." :
+                                    "Race pace. Now we're talking."
+                                  );
+                                }}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="arcade-skill-hint">
+                            {ananseSkill === "easy" && "Relaxed pace — he hangs back and rarely boosts. Good for learning the ridge."}
+                            {ananseSkill === "medium" && "He races your pace and keeps it close. Beatable, never free."}
+                            {ananseSkill === "hard" && "No mercy, late braking, boosts on sight. Bring your best laps."}
+                          </p>
+                        </div>
                         <p className="arcade-track-note">
                           Ananse only races Akina Ridge for now — the other circuits are coming soon.
                         </p>
@@ -944,7 +989,6 @@ export default function Home() {
 
         {screen === "finish" && result && arcadeMode && (() => {
           const won = !result.ananse?.won;
-          const margin = result.ananse?.behindMeters ?? 0;
           return (
           <Panel>
             <p className="eyebrow">Arcade — vs Ananse</p>
@@ -953,13 +997,7 @@ export default function Home() {
               <AnanseFace variant="portrait" size="small" />
               <div>
                 <b>{won ? "You chopped Ananse!" : "Ananse takes it."}</b>
-                <span>
-                  {won
-                    ? margin > 0
-                      ? `“Ei! ${margin} metres?! Lucky. Very lucky. Rematch — right now.”`
-                      : "“Ei! Lucky. Very lucky. Rematch — right now.”"
-                    : "“I told you — I wrote the road. Run it back if you dare.”"}
-                </span>
+                <span>“{result.ananseLine || (won ? "Lucky. Very lucky. Rematch — right now." : "I wrote the road. Run it back if you dare.")}”</span>
               </div>
             </div>
             <div className="stats-grid">

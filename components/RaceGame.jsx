@@ -27,7 +27,7 @@ import {
   wrapDistance,
 } from "../game/track";
 import { createVehicleState, getVehicleTransform, MAX_BOOST_CHARGES, resolveCarCollision, updateVehicle } from "../game/vehicle";
-import { ANANSE_PERSONALITY, createAiInput, getAnanseLine } from "../game/ai-driver";
+import { ANANSE_DIFFICULTIES, ANANSE_PERSONALITY, createAiInput, getAnanseLine } from "../game/ai-driver";
 import AnanseFace from "./AnanseFace";
 import { createGameAudio } from "../game/audio";
 
@@ -118,7 +118,7 @@ const SPACE_THEME = {
 // over a distant plane and the road looks like it's hanging in mid-air.
 const GROUND_Y = -1.0;
 
-export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", trackId = "akina-ridge", arcadeMode = false, onFinish, onQuit, onRestart, onReady }) {
+export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", trackId = "akina-ridge", arcadeMode = false, ananseSkill = "medium", onFinish, onQuit, onRestart, onReady }) {
   // Activate the chosen track before the scene geometry and vehicle are built
   // from it below (this component renders before its RaceScene child).
   setActiveTrack(trackId);
@@ -186,7 +186,7 @@ export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", 
           </>
         )}
         {theme.space && <SpaceBackdrop />}
-        <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} arcadeMode={arcadeMode} onFinish={onFinish} setRace={setRace} setAnanseDialog={setAnanseDialog} showDebug={showDebug} pausedRef={pausedRef} audio={audio} ghostLabels={ghostLabels} headlights={theme.headlights} onReady={onReady} />
+        <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} arcadeMode={arcadeMode} ananseSkill={ananseSkill} onFinish={onFinish} setRace={setRace} setAnanseDialog={setAnanseDialog} showDebug={showDebug} pausedRef={pausedRef} audio={audio} ghostLabels={ghostLabels} headlights={theme.headlights} onReady={onReady} />
       </Canvas>
       <RaceHud race={race} driver={driver} muted={muted} onToggleMute={() => setMuted((value) => !value)} onPause={() => setPaused(true)} />
       <TouchControls controlsRef={inputRef} boosts={race.boosts} lasers={HAZARDS.length > 0} />
@@ -247,7 +247,7 @@ function PauseOverlay({ onResume, onGuide, onQuit, onRestart, ghostLabels, onTog
   );
 }
 
-function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, onFinish, setRace, setAnanseDialog, showDebug, pausedRef, audio, ghostLabels, headlights, onReady }) {
+function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, ananseSkill, onFinish, setRace, setAnanseDialog, showDebug, pausedRef, audio, ghostLabels, headlights, onReady }) {
   const car = useMemo(() => createVehicleState(driver?.vehicle), [driver?.vehicle]);
   // Ananse AI car: spawns on the racing line a few metres BEHIND the player so
   // the grid is staggered (player leads off the line) and neither car starts
@@ -320,7 +320,8 @@ function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, onFinish, s
       // --- Ananse AI update
       if (ananseCar) {
         // pass the player car so the rubber band knows the live gap
-        const aiInput = createAiInput(ananseCar, ANANSE_PERSONALITY, car);
+        const personality = ANANSE_DIFFICULTIES[ananseSkill] || ANANSE_PERSONALITY;
+        const aiInput = createAiInput(ananseCar, personality, car);
         updateVehicle(ananseCar, aiInput, dt);
         resolveCarCollision(car, ananseCar);
 
