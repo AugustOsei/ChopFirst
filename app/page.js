@@ -7,6 +7,7 @@ import GuideModal from "../components/GuideModal";
 import FeedbackModal from "../components/FeedbackModal";
 import ChangelogModal from "../components/ChangelogModal";
 import AboutModal from "../components/AboutModal";
+import { buildArcadeShareText, buildArcadeShareUrl } from "../lib/arcade-share";
 import { CURRENT_VERSION } from "../lib/changelog";
 import { logEvent } from "../lib/log-event";
 import { AD_SECONDS, pickAd } from "../lib/ads";
@@ -250,6 +251,17 @@ export default function Home() {
   // from it — medals, PB key, challenge matching, run tagging) reflects it.
   const selectedTrack = driver.track || "akina-ridge";
   setActiveTrack(selectedTrack);
+
+  // Arrivals from a shared arcade link (/vs bounces to /?arcade=1) go straight
+  // to the arcade lobby rather than the generic landing page — the share
+  // promised Ananse, so put them in front of him.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("arcade") !== "1") return;
+    logEvent("arcade_link_opened");
+    window.history.replaceState(null, "", "/");
+    openArcade();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("challenge") || "";
@@ -559,6 +571,22 @@ export default function Home() {
       }
     }
     window.open(`https://wa.me/?text=${shareText}`, "_blank");
+  }
+
+  // Same pattern as shareChallenge: native sheet where there is one, WhatsApp
+  // otherwise. The URL is passed separately so the share sheet can build a rich
+  // preview from /vs rather than treating the link as plain text.
+  async function shareArcade(text, url) {
+    logEvent("share_arcade_primary");
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ title: "CHOP FIRST", text, url });
+        return;
+      } catch {
+        // sheet dismissed — fall through to WhatsApp
+      }
+    }
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
   }
 
   async function viewLeaderboard() {
@@ -1077,6 +1105,15 @@ export default function Home() {
           const canStepUp = skillIndex >= 0 && skillIndex < ANANSE_SKILL_IDS.length - 1;
           const nextSkill = canStepUp ? ANANSE_SKILL_IDS[skillIndex + 1] : ananseSkill;
           const paceContext = `${ANANSE_SKILL_LABELS[ananseSkill]} · ${TRACK.name} · player ${formatTime(result.timeMs)} · ${won ? `won by ${margin} m` : "lost"}`;
+          // Arcade share. Unlike Time Attack there is no challenge to save, so
+          // the link carries the result in its own query string and /vs renders
+          // the Open Graph card from it.
+          const arcadeResult = { won, timeMs: result.timeMs, marginMeters: margin, skill: ananseSkill };
+          const arcadeShareUrl = typeof window === "undefined"
+            ? ""
+            : buildArcadeShareUrl(window.location.origin, arcadeResult);
+          const arcadeShareText = buildArcadeShareText(arcadeResult, arcadeShareUrl);
+          const arcadeShareEncoded = encodeURIComponent(arcadeShareText);
           return (
           <Panel>
             <p className="eyebrow">Arcade — vs Ananse</p>
@@ -1121,6 +1158,35 @@ export default function Home() {
                 </div>
               </div>
             )}
+            {/* Share. Shown win or lose — "come and humble him" travels at
+                least as well as a victory lap, and losing is the more common
+                outcome we would otherwise never hear about. */}
+            <div className="arcade-share">
+              <p className="share-nudge">
+                {won ? "Tell them you chopped him. He'll deny it." : "Send Ananse after someone else."}
+              </p>
+              <button className="primary share-hero" onClick={() => shareArcade(arcadeShareText, arcadeShareUrl)}>
+                📣 Share this race
+              </button>
+              <div className="share-row share-quick">
+                <a
+                  className="secondary link-button share-wa"
+                  href={`https://wa.me/?text=${arcadeShareEncoded}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => logEvent("share_arcade_whatsapp")}
+                >WhatsApp</a>
+                <a
+                  className="secondary link-button"
+                  href={`sms:?&body=${arcadeShareEncoded}`}
+                  onClick={() => logEvent("share_arcade_sms")}
+                >SMS</a>
+                <button
+                  className="secondary"
+                  onClick={() => { navigator.clipboard.writeText(arcadeShareText); logEvent("share_arcade_copy"); }}
+                >Copy</button>
+              </div>
+            </div>
             <div className="finish-nav">
               <button className="finish-nav-link" onClick={startArcadeRace}>↻ Rematch</button>
               <button className="finish-nav-link muted" onClick={() => { setArcadeMode(false); setScreen("title"); }}>⌂ Home</button>

@@ -4601,3 +4601,41 @@ kbd {
 @media (max-width: 760px) {
   .nav-toggle { display: inline-flex; }
 }
+
+/* ---- Arcade finish: share ----
+   Leans on the existing Time Attack share classes (.share-nudge, .share-hero,
+   .share-row) so the two finish screens feel like one product; only the
+   container is new. */
+.arcade-share {
+  margin: 14px 0 4px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(124, 58, 237, .12);
+  border: 1px solid rgba(124, 58, 237, .38);
+}
+
+.arcade-share .share-nudge {
+  margin: 0 0 10px;
+}
+
+.arcade-share .share-hero {
+  width: 100%;
+}
+
+.arcade-share .share-row {
+  margin-top: 8px;
+}
+
+/* Bare-bones markup behind the share target — only ever seen with JS off, or
+   for the instant before the redirect fires. */
+.vs-fallback {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 48px 24px;
+  color: #eaf1f7;
+  font-family: system-ui, sans-serif;
+}
+
+.vs-fallback a {
+  color: #ffd15c;
+}
