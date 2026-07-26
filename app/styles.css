@@ -561,15 +561,27 @@ button {
   will-change: opacity, transform;
   backface-visibility: hidden;
 }
-/* Three hero stills slow-zoom (Ken Burns) and cross-dissolve on a shared 30s
-   loop. The Orbital Highway leads — it's the newest, most striking art, so
-   it's what a fresh visitor sees — then Akina, then Accra. */
-.hero-art.is-orbital { object-position: 50% 44%; animation: heroFadeA 30s ease-in-out infinite, heroKenC 30s ease-in-out infinite; }
-.hero-art.is-akina { animation: heroFadeB 30s ease-in-out infinite, heroKenA 30s ease-in-out infinite; }
-.hero-art.is-accra { object-position: 50% 56%; animation: heroFadeC 30s ease-in-out infinite, heroKenB 30s ease-in-out infinite; }
-@keyframes heroFadeA { 0%, 27% { opacity: 1; } 33%, 94% { opacity: 0; } 100% { opacity: 1; } }
-@keyframes heroFadeB { 0%, 27% { opacity: 0; } 33%, 60% { opacity: 1; } 66%, 100% { opacity: 0; } }
-@keyframes heroFadeC { 0%, 60% { opacity: 0; } 66%, 94% { opacity: 1; } 100% { opacity: 0; } }
+/* Four hero stills slow-zoom (Ken Burns) and cross-dissolve on a shared 40s
+   loop — three circuits and the rivalry. The Orbital Highway leads (newest and
+   most striking art, so it's what a fresh visitor sees), then Akina, Accra, and
+   Arcade last, landing on Ananse right before the loop restarts.
+
+   Each slide owns a quarter of the loop with a 5% crossfade at each edge; the
+   windows have to stay flush or the hero flashes through to the page behind. */
+.hero-art.is-orbital { object-position: 50% 44%; animation: heroFadeA 40s ease-in-out infinite, heroKenC 40s ease-in-out infinite; }
+.hero-art.is-akina { animation: heroFadeB 40s ease-in-out infinite, heroKenA 40s ease-in-out infinite; }
+.hero-art.is-accra { object-position: 50% 56%; animation: heroFadeC 40s ease-in-out infinite, heroKenB 40s ease-in-out infinite; }
+.hero-art.is-arcade { object-position: 50% 44%; animation: heroFadeD 40s ease-in-out infinite, heroKenA 40s ease-in-out infinite; }
+/* Mirrors the <picture> breakpoint: below it the stacked portrait art is
+   served, and a short-but-wide window crops it to the drivers' midriffs unless
+   the framing is pulled up to their faces. */
+@media (max-width: 1080px) {
+  .hero-art.is-arcade { object-position: 50% 12%; }
+}
+@keyframes heroFadeA { 0%, 22% { opacity: 1; } 27%, 95% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes heroFadeB { 0%, 22% { opacity: 0; } 27%, 47% { opacity: 1; } 52%, 100% { opacity: 0; } }
+@keyframes heroFadeC { 0%, 47% { opacity: 0; } 52%, 72% { opacity: 1; } 77%, 100% { opacity: 0; } }
+@keyframes heroFadeD { 0%, 72% { opacity: 0; } 77%, 95% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes heroKenA {
   0% { transform: scale(1.02) translate(0, 0); }
   50% { transform: scale(1.12) translate(-1.5%, -1.2%); }
@@ -586,8 +598,8 @@ button {
   100% { transform: scale(1.1) translate(-1%, 1%); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .hero-art.is-akina, .hero-art.is-accra, .hero-art.is-orbital { animation: none; }
-  .hero-art.is-akina, .hero-art.is-accra { opacity: 0; }
+  .hero-art.is-akina, .hero-art.is-accra, .hero-art.is-orbital, .hero-art.is-arcade { animation: none; }
+  .hero-art.is-akina, .hero-art.is-accra, .hero-art.is-arcade { opacity: 0; }
 }
 
 .hero-scrim {

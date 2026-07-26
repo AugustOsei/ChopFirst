@@ -1508,6 +1508,15 @@ function LandingPage({ challenge, onStart, onArcade, onGuide, onBoard, onFeedbac
             <source media="(max-width: 760px)" srcSet="/cover-orbital-mobile.jpg" />
             <img src="/cover-orbital.jpg" alt="" className="hero-art is-orbital" />
           </picture>
+          {/* Arcade is the one slide about people rather than a place, and the
+              two drivers sit hard against the left and right edges — so it
+              switches to the stacked portrait art much earlier than Orbital
+              does. Anything narrower than about 16:9 crops both of them off,
+              which loses the entire point of the shot. */}
+          <picture>
+            <source media="(max-width: 1080px)" srcSet="/cover-arcade-mobile.jpg" />
+            <img src="/cover-arcade.jpg" alt="" className="hero-art is-arcade" />
+          </picture>
         </div>
         <div className="hero-scrim" />
         <div className="hero-inner">
