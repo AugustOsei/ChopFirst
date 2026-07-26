@@ -3,6 +3,22 @@
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: #d8ebf4;
   color: #101820;
+
+  /* Race HUD — "projected light". The touch controls have spoken this language
+     since July; the instruments were still machined-metal panels with opaque
+     gradients and drop shadows, which is why the two halves of the same screen
+     looked like they came from different games. One vocabulary now: glass,
+     hairline, glow, and nothing opaque. Colours are the ones already in the
+     world — rail cyan, Ghana gold, the tail-light red. */
+  --hud-glass: rgba(8, 14, 22, .42);
+  --hud-blur: blur(14px);
+  --hud-cyan: 125, 232, 255;
+  --hud-gold: 244, 196, 48;
+  --hud-red: 255, 78, 92;
+  --hud-rim: 1px solid rgba(125, 232, 255, .32);
+  --hud-lift: 0 0 16px rgba(125, 232, 255, .1), inset 0 0 12px rgba(125, 232, 255, .05);
+  --hud-text: #eaf6fb;
+  --hud-dim: rgba(200, 224, 236, .62);
 }
 
 * {
@@ -51,25 +67,22 @@ button {
   touch-action: manipulation;
 }
 
+/* The game owns the whole viewport on every device — no letterboxed stage, no
+   painted backdrop showing around it. Anything the player sees is rendered. */
 .app-shell {
-  min-height: 100dvh;
-  display: grid;
-  place-items: center;
-  padding: 12px;
-  background:
-    linear-gradient(180deg, #bce4fb 0%, #eef9ff 42%, #8dbb5e 43%, #30432d 100%);
+  height: 100dvh;
+  display: block;
+  padding: 0;
+  background: #05070b;
+  overflow: hidden;
 }
 
 .game-stage {
   position: relative;
-  width: min(1180px, 100%);
-  height: min(740px, calc(100dvh - 24px));
-  min-height: 560px;
+  width: 100%;
+  height: 100dvh;
   overflow: hidden;
-  border: 1px solid rgba(11, 23, 32, .24);
-  border-radius: 8px;
-  background: #dbeef8;
-  box-shadow: 0 24px 90px rgba(15, 25, 18, .35);
+  background: #05070b;
 }
 
 .game-canvas {
@@ -1278,26 +1291,525 @@ textarea:focus {
   transition: opacity .25s ease-out;
 }
 
-.hud-top {
+/* ============================ race HUD ====================================
+   Broadcast overlay, not a dashboard of panels. The rule: nothing that carries
+   a number gets a box. Legibility comes from weight, italic, and a hard shadow,
+   the way a race broadcast lays type straight onto the footage — a panel behind
+   every reading is what made the old HUD read as a template.
+
+   Only two things keep a surface: the map (a lens you look into) and the
+   nitrous bar (a vessel you look at the level of). Both earn it. */
+
+.hud-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(3, 7, 12, .58), rgba(3, 7, 12, .16) 92px, rgba(3, 7, 12, 0) 150px),
+    radial-gradient(210px 190px at calc(100% - 104px) calc(100% - 104px), rgba(3, 7, 12, .62), rgba(3, 7, 12, 0) 74%),
+    radial-gradient(150px 130px at calc(100% - 79px) 78px, rgba(3, 7, 12, .5), rgba(3, 7, 12, 0) 72%);
+}
+
+.hud-corner {
+  position: absolute;
+  top: 18px;
+  left: 20px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* controls are glyphs, not buttons with plates */
+.hud-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(6, 10, 16, .32);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background .14s ease, transform .1s ease;
+}
+
+.hud-icon svg {
+  width: 17px;
+  height: 17px;
+  fill: rgba(255, 255, 255, .88);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .9));
+}
+
+.hud-icon svg .stroke {
+  fill: none;
+  stroke: rgba(255, 255, 255, .88);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.hud-icon:hover {
+  background: rgba(255, 46, 67, .5);
+}
+
+.hud-icon:active {
+  transform: scale(.94);
+}
+
+.hud-driver {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.hud-driver img,
+.hud-driver span {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .5), 0 2px 8px rgba(0, 0, 0, .7);
+}
+
+.hud-driver span {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(160deg, #ffd45e, #ff9b2e);
+  color: #1d1305;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.hud-driver b {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, .95);
+}
+
+/* ------------------------------- the run -------------------------------- */
+
+.hud-run {
   position: absolute;
   top: 14px;
   left: 50%;
   transform: translateX(-50%);
-  display: flex;
-  gap: 0;
-  padding: 2px;
-  border: 1px solid rgba(255, 255, 255, .08);
-  border-radius: 15px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, 0) 42%),
-    linear-gradient(160deg, rgba(26, 33, 44, .9), rgba(8, 12, 18, .9));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .12),
-    inset 0 -1px 0 rgba(0, 0, 0, .4),
-    0 12px 34px rgba(3, 7, 12, .5);
-  backdrop-filter: blur(16px);
-  overflow: hidden;
+  display: grid;
+  justify-items: center;
+  gap: 1px;
   pointer-events: none;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, .92), 0 0 3px rgba(0, 0, 0, .8);
+}
+
+.run-lap {
+  color: rgba(255, 255, 255, .68);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .3em;
+}
+
+.run-lap b {
+  color: #ffc531;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.run-lap i {
+  font-style: normal;
+  color: rgba(255, 255, 255, .45);
+}
+
+/* the one display-sized number on the screen's top half */
+.run-time {
+  font-size: 44px;
+  font-style: italic;
+  font-weight: 950;
+  line-height: .96;
+  letter-spacing: -.035em;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+.run-tail {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.run-coins {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #ffd45e;
+  font-variant-numeric: tabular-nums;
+  animation: coin-bump .28s ease-out;
+}
+
+.run-coins i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ffd45e;
+  box-shadow: 0 0 8px rgba(255, 212, 94, .9);
+}
+
+@keyframes coin-bump {
+  from { transform: scale(1.3); }
+}
+
+/* drift is a souvenir you read at the finish, not a gauge you steer by */
+.run-drift {
+  color: rgba(255, 255, 255, .4);
+  font-variant-numeric: tabular-nums;
+  transition: color .2s ease;
+}
+
+.run-drift.live {
+  color: #ffce4a;
+  text-shadow: 0 0 14px rgba(255, 206, 74, .9);
+}
+
+/* -------------------------------- the map -------------------------------- */
+
+.hud-map {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  width: 122px;
+  height: 122px;
+  pointer-events: none;
+}
+
+.map-ring,
+.map-face {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.map-face {
+  padding: 16px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: rgba(4, 9, 15, .6);
+  backdrop-filter: blur(9px);
+  overflow: hidden;
+}
+
+.ring-base,
+.ring-run {
+  fill: none;
+  stroke-width: 3;
+}
+
+.ring-base {
+  stroke: rgba(255, 255, 255, .28);
+}
+
+/* the lap runs round the rim — one reading, one place */
+.ring-run {
+  stroke: #ff2e43;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 7px rgba(255, 46, 67, 1));
+  transition: stroke-dasharray .2s linear;
+}
+
+/* ------------------------------ tachometer --------------------------------
+   A frosted instrument, not an outline. The disc is light and the numerals are
+   dark — the reverse of everything else in the overlay — because that is what
+   makes it read as a piece of hardware bolted onto the scene rather than more
+   HUD drawn on top of it. It is the one object here allowed to be a thing. */
+
+.tacho {
+  --heat: 0;
+  position: absolute;
+  right: 22px;
+  bottom: 74px;
+  width: 186px;
+  height: 186px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 34%, rgba(248, 250, 255, .58), rgba(214, 224, 246, .42) 62%, rgba(178, 194, 228, .34) 100%);
+  border: 2.5px solid rgba(255, 255, 255, .82);
+  box-shadow:
+    0 0 0 1px rgba(60, 80, 120, .3),
+    0 10px 30px rgba(3, 7, 12, .55),
+    inset 0 2px 10px rgba(255, 255, 255, .55),
+    0 0 calc(10px + var(--heat) * 26px) rgba(255, 46, 67, calc(var(--heat) * .6));
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+  transition: box-shadow .15s linear;
+}
+
+.tacho.boosting {
+  border-color: rgba(255, 226, 150, .95);
+  box-shadow:
+    0 0 0 1px rgba(60, 80, 120, .3),
+    0 10px 30px rgba(3, 7, 12, .55),
+    inset 0 2px 10px rgba(255, 255, 255, .55),
+    0 0 34px rgba(255, 197, 49, .8);
+}
+
+.tacho-face {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.arc-base,
+.arc-redline,
+.arc-value {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: butt;
+}
+
+.arc-base {
+  stroke: rgba(70, 92, 138, .26);
+}
+
+/* the redline is printed on the face, marking where the car will be rather
+   than where it is */
+.arc-redline {
+  stroke: #ff2e43;
+}
+
+.arc-value {
+  stroke: #2f7bff;
+  filter: drop-shadow(0 0 5px rgba(47, 123, 255, .8));
+  transition: stroke-dasharray .09s linear, stroke .2s ease;
+}
+
+.tacho.boosting .arc-value {
+  stroke: #ffb01e;
+  filter: drop-shadow(0 0 7px rgba(255, 176, 30, .95));
+}
+
+.tk {
+  stroke: rgba(32, 46, 78, .58);
+  stroke-width: 2;
+  stroke-linecap: butt;
+}
+
+.tk.mj {
+  stroke: rgba(20, 30, 56, .92);
+  stroke-width: 3.2;
+}
+
+.tk.red {
+  stroke: #e01b30;
+}
+
+.tn {
+  fill: #1b2440;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -.02em;
+}
+
+.tacho-needle polygon {
+  fill: #e01b30;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .45));
+}
+
+.tacho-needle .counter {
+  fill: #2b3554;
+}
+
+.tacho.boosting .tacho-needle polygon {
+  fill: #ff8a1e;
+}
+
+.tacho-hub {
+  fill: #2b3554;
+  stroke: rgba(255, 255, 255, .85);
+  stroke-width: 1.6;
+}
+
+/* --- the LCD ------------------------------------------------------------- */
+
+.tacho-lcd {
+  position: absolute;
+  left: 50%;
+  top: 51%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(16, 26, 40, .82);
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, .7), 0 1px 0 rgba(255, 255, 255, .5);
+}
+
+.lcd-gear {
+  color: #ffb01e;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 0 0 9px rgba(255, 176, 30, .9);
+}
+
+.lcd-gear.rev {
+  color: #ff5a4e;
+  text-shadow: 0 0 9px rgba(255, 90, 78, .9);
+}
+
+.lcd {
+  display: block;
+  width: 50px;
+  height: 21px;
+}
+
+/* unlit segments stay faintly visible — an LCD you can see the whole of even
+   when only part of it is on */
+.seg {
+  fill: rgba(120, 220, 214, .1);
+}
+
+.seg.on {
+  fill: #46e6d2;
+  filter: drop-shadow(0 0 3px rgba(70, 230, 210, .9));
+}
+
+.tacho.boosting .seg.on {
+  fill: #ffd45e;
+  filter: drop-shadow(0 0 4px rgba(255, 212, 94, .95));
+}
+
+/* the multiplier caption, sitting where a real dial prints its scale */
+.tacho-cap {
+  position: absolute;
+  left: 50%;
+  top: 32%;
+  transform: translateX(-50%);
+  color: rgba(27, 36, 64, .7);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  white-space: nowrap;
+}
+
+/* -------------------------------- nitrous -------------------------------- */
+
+.nitro {
+  --fill: 0;
+  position: absolute;
+  right: 22px;
+  bottom: 28px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 168px;
+  pointer-events: none;
+}
+
+.nitro-bottle svg {
+  display: block;
+  width: 13px;
+  height: 24px;
+  fill: rgba(255, 255, 255, .34);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .9));
+  transition: fill .2s ease, filter .2s ease;
+}
+
+.nitro.full .nitro-bottle svg,
+.nitro.firing .nitro-bottle svg {
+  fill: #ffc531;
+  filter: drop-shadow(0 0 8px rgba(255, 197, 49, .95));
+}
+
+/* the slant is the one piece of livery in the whole overlay */
+.nitro-bar {
+  position: relative;
+  flex: 1;
+  height: 13px;
+  transform: skewX(-16deg);
+  background: rgba(6, 11, 17, .5);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
+  overflow: hidden;
+  backdrop-filter: blur(6px);
+}
+
+.nitro-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  transform: scaleX(var(--fill));
+  background: linear-gradient(90deg, #ff8a1e, #ffc531 62%, #fff4c4);
+  box-shadow: 0 0 14px rgba(255, 197, 49, .7);
+  /* a touch of overshoot on the way up reads as a charge landing */
+  transition: transform .5s cubic-bezier(.3, 1.35, .45, 1);
+}
+
+.nitro-notches {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 calc(20% - 1.5px),
+    rgba(0, 0, 0, .55) calc(20% - 1.5px) 20%
+  );
+}
+
+.nitro-cool {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, .85);
+  transform-origin: left center;
+}
+
+.nitro-count {
+  min-width: 14px;
+  color: #fff;
+  font-size: 15px;
+  font-style: italic;
+  font-weight: 950;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, .95);
+}
+
+.nitro.full .nitro-bar {
+  box-shadow: inset 0 0 0 1px rgba(255, 197, 49, .85);
+  animation: nitro-brim 1.7s ease-in-out infinite;
+}
+
+@keyframes nitro-brim {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.35); }
+}
+
+.nitro.firing .nitro-fill {
+  transition-duration: .18s;
+  transition-timing-function: ease-in;
+  background: linear-gradient(90deg, #fff4c4, #fff);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nitro.full .nitro-bar,
+  .run-coins {
+    animation: none;
+  }
+  .nitro-fill {
+    transition-duration: .01s;
+  }
 }
 
 .delta-timer {
@@ -1326,100 +1838,6 @@ textarea:focus {
 .delta-timer.behind {
   color: #ff6b5e;
   border-color: rgba(255, 107, 94, .35);
-}
-
-.hud-chip {
-  position: relative;
-  display: grid;
-  gap: 2px;
-  min-width: 84px;
-  padding: 8px 16px 9px;
-  color: #7c8b99;
-  text-align: center;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: .16em;
-}
-
-/* hairline divider between gauges in the cluster */
-.hud-chip + .hud-chip::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 16%;
-  height: 68%;
-  width: 1px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, .16) 45%, rgba(255, 255, 255, 0));
-}
-
-.hud-chip b {
-  color: #f4f7fa;
-  font-size: 20px;
-  font-weight: 900;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -.01em;
-  text-shadow: 0 0 12px rgba(120, 180, 255, .18);
-}
-
-.hud-chip b i {
-  font-style: normal;
-  color: #707e8b;
-  font-size: 13px;
-}
-
-/* glowing under-accent that marks the cluster as live instrumentation */
-.hud-chip::after {
-  content: "";
-  position: absolute;
-  left: 22%;
-  right: 22%;
-  bottom: 3px;
-  height: 2px;
-  border-radius: 2px;
-  background: rgba(120, 160, 200, .35);
-  box-shadow: 0 0 8px rgba(120, 160, 200, .3);
-}
-
-.time-chip::after {
-  background: #56d0ff;
-  box-shadow: 0 0 10px rgba(86, 208, 255, .7);
-}
-
-.lap-chip small {
-  color: #ffd98c;
-}
-
-.lap-chip::after {
-  background: #ffd45e;
-  box-shadow: 0 0 10px rgba(255, 212, 94, .75);
-}
-
-.lap-chip b {
-  font-style: italic;
-  font-size: 21px;
-  background: linear-gradient(180deg, #fff 20%, #ffd45e 90%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.lap-chip b i {
-  background: none;
-  -webkit-background-clip: initial;
-  background-clip: initial;
-  color: #76838f;
-}
-
-.hud-chip .drift-live {
-  color: #ffce4a;
-  text-shadow: 0 0 14px rgba(255, 206, 74, .8);
-}
-
-.minimap {
-  display: block;
-  width: 100%;
-  aspect-ratio: 1;
-  margin-bottom: 7px;
 }
 
 .minimap-road-casing {
@@ -1525,227 +1943,13 @@ textarea:focus {
   color: #ff8d85;
 }
 
-.progress-map {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  width: 134px;
-  padding: 11px 12px 10px;
-  border: 1px solid rgba(255, 255, 255, .08);
-  border-radius: 15px;
-  background:
-    radial-gradient(120% 90% at 50% 0%, rgba(86, 208, 255, .08), transparent 60%),
-    linear-gradient(180deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, 0) 42%),
-    linear-gradient(160deg, rgba(26, 33, 44, .9), rgba(8, 12, 18, .9));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .12),
-    0 12px 34px rgba(3, 7, 12, .5);
-  backdrop-filter: blur(16px);
-  pointer-events: none;
+@keyframes fc-roll {
+  to { transform: rotate(360deg); }
 }
 
-.progress-track {
-  position: relative;
-  height: 7px;
-  border-radius: 999px;
-  background:
-    linear-gradient(90deg, transparent 32.5%, rgba(255,255,255,.3) 32.5% 33.5%, transparent 33.5% 66.5%, rgba(255,255,255,.3) 66.5% 67.5%, transparent 67.5%),
-    rgba(0, 0, 0, .35);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .5);
-}
-
-.progress-track span {
-  position: absolute;
-  top: 50%;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 40% 35%, #ff8a93, #ff3b4e 65%);
-  border: 1px solid rgba(255, 255, 255, .55);
-  box-shadow: 0 0 12px rgba(255, 59, 78, .9);
-  transform: translate(-50%, -50%);
-}
-
-.speedo {
-  --heat: 0;
-  position: absolute;
-  left: 18px;
-  bottom: 18px;
-  width: 142px;
-  height: 142px;
-  pointer-events: none;
-}
-
-/* machined outer bezel behind the dial */
-.speedo::before {
-  content: "";
-  position: absolute;
-  inset: -5px;
-  border-radius: 50%;
-  background:
-    conic-gradient(from 140deg, #2b333f, #11161e 25%, #2b333f 50%, #11161e 75%, #2b333f),
-    radial-gradient(circle at 50% 30%, rgba(46, 56, 70, .9), rgba(7, 10, 15, .98));
-  box-shadow:
-    inset 0 2px 3px rgba(255, 255, 255, .14),
-    inset 0 -8px 16px rgba(0, 0, 0, .65),
-    0 14px 32px rgba(3, 7, 12, .55),
-    0 0 calc(18px + var(--heat) * 28px) rgba(255, 59, 78, calc(var(--heat) * .55));
-  transition: box-shadow .15s linear;
-}
-
-.speedo.boosting::before {
-  box-shadow:
-    inset 0 2px 3px rgba(255, 255, 255, .14),
-    inset 0 -8px 16px rgba(0, 0, 0, .65),
-    0 14px 32px rgba(3, 7, 12, .55),
-    0 0 40px rgba(255, 177, 46, .8);
-}
-
-/* graduated tick ring around the gauge */
-.speedo-ticks {
-  position: absolute;
-  inset: 5px;
-  border-radius: 50%;
-  background: repeating-conic-gradient(from -138deg, rgba(255, 255, 255, .45) 0 .8deg, transparent .8deg 13.2deg);
-  -webkit-mask-image: radial-gradient(circle, transparent 0 68%, #000 70% 78%, transparent 80%);
-  mask-image: radial-gradient(circle, transparent 0 68%, #000 70% 78%, transparent 80%);
-  opacity: .5;
-}
-
-.speedo-ring {
-  position: absolute;
-  inset: 4px;
-  border-radius: 50%;
-  transform: rotate(180deg);
-  mask-image: radial-gradient(circle, transparent 0 60%, #000 61% 90%, transparent 91%);
-  -webkit-mask-image: radial-gradient(circle, transparent 0 60%, #000 61% 90%, transparent 91%);
-  filter: drop-shadow(0 0 calc(4px + var(--heat) * 8px) rgba(255, 59, 78, calc(.4 + var(--heat) * .5)));
-  transition: background .1s linear, filter .15s linear;
-}
-
-.speedo-ring.boosting {
-  filter: drop-shadow(0 0 14px rgba(255, 177, 46, .95));
-}
-
-.speedo-core {
-  position: absolute;
-  inset: 22px;
-  display: grid;
-  place-content: center;
-  gap: 0;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 30%, rgba(40, 51, 65, .98), rgba(8, 12, 18, .98) 78%);
-  border: 1px solid rgba(255, 255, 255, .08);
-  box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, .14),
-    inset 0 -10px 18px rgba(0, 0, 0, .55);
-  text-align: center;
-}
-
-.speedo-core b {
-  font-size: 36px;
-  font-weight: 950;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -.02em;
-  background: linear-gradient(180deg, #ffffff 35%, #b9c6d3 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  text-shadow: 0 0 calc(var(--heat) * 16px) rgba(255, 90, 100, calc(var(--heat) * .8));
-}
-
-.speedo-core small {
-  margin-top: 1px;
-  color: #76879a;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: .22em;
-}
-
-.speedo-core .gear {
-  margin-top: 4px;
-  justify-self: center;
-  min-width: 24px;
-  border-radius: 5px;
-  padding: 1px 6px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .06));
-  border: 1px solid rgba(255, 255, 255, .12);
-  color: #dbe4ee;
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: .04em;
-}
-
-.speedo-core .gear.rev {
-  background: #ff3b4e;
-  color: #fff;
-  box-shadow: 0 0 14px rgba(255, 59, 78, .75);
-}
-
-.boost-meter {
-  position: absolute;
-  right: 18px;
-  bottom: 108px;
-  display: grid;
-  gap: 5px;
-  justify-items: end;
-  pointer-events: none;
-}
-
-.boost-meter small {
-  color: #ffd98c;
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: .18em;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, .6);
-}
-
-.boost-pips {
-  display: flex;
-  gap: 6px;
-}
-
-.boost-pips .pip {
-  width: 26px;
-  height: 12px;
-  border-radius: 3px;
-  background: rgba(8, 12, 18, .65);
-  border: 1px solid rgba(255, 255, 255, .14);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .5);
-  transform: skewX(-18deg);
-  transition: background .15s ease, box-shadow .15s ease;
-}
-
-.boost-pips .pip.full {
-  background: linear-gradient(180deg, #ffd45e, #ff9b2e);
-  border-color: rgba(255, 212, 94, .8);
-  box-shadow: 0 0 12px rgba(255, 177, 46, .55);
-}
-
-.boost-pips .pip.firing {
-  animation: pip-fire .4s ease-out;
-}
-
-@keyframes pip-fire {
-  0% { box-shadow: 0 0 22px rgba(255, 177, 46, 1); background: #fff1c4; }
-  100% { box-shadow: none; }
-}
-
-.boost-cooldown {
-  width: 90px;
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(13, 19, 27, .7);
-  overflow: hidden;
-}
-
-.boost-cooldown span {
-  display: block;
-  height: 100%;
-  background: #ffb12e;
-  border-radius: 999px;
+@keyframes fc-brim {
+  0%, 100% { box-shadow: 0 0 18px rgba(244, 196, 48, .35), inset 0 0 12px rgba(244, 196, 48, .12); }
+  50%      { box-shadow: 0 0 34px rgba(244, 196, 48, .65), inset 0 0 20px rgba(244, 196, 48, .28); }
 }
 
 .race-countdown {
@@ -1979,7 +2183,6 @@ textarea:focus {
 
 @media (prefers-reduced-motion: reduce) {
   .touch-controls button::before,
-  .speedo::before,
   .t-steer.pressed .chev,
   .touch-controls .t-boost.full,
   .touch-controls .t-boost.full svg {
@@ -2154,27 +2357,6 @@ textarea:focus {
   from {
     opacity: 0;
     transform: translateX(-50%) translateY(8px);
-  }
-}
-
-/* Touch devices regardless of width/orientation: full-bleed stage (the 720px
-   query misses landscape phones), no scroll, HUD clear of the corner zones. */
-@media (hover: none) {
-  .app-shell {
-    padding: 0;
-  }
-
-  .game-stage {
-    width: 100%;
-    height: 100dvh;
-    min-height: 0;
-    border: 0;
-    border-radius: 0;
-  }
-
-  /* boost tank in the touch controls is the meter */
-  .boost-meter {
-    display: none;
   }
 }
 
@@ -2700,95 +2882,6 @@ kbd {
   text-decoration: underline;
 }
 
-/* --- pause --- */
-
-.hud-corner {
-  position: absolute;
-  top: 14px;
-  left: 14px;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.driver-chip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 44px;
-  padding: 0 14px 0 6px;
-  border: 1px solid rgba(255, 255, 255, .1);
-  border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, 0) 45%),
-    linear-gradient(160deg, rgba(26, 33, 44, .9), rgba(8, 12, 18, .9));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .12),
-    0 10px 28px rgba(3, 7, 12, .45);
-  backdrop-filter: blur(16px);
-  pointer-events: none;
-}
-
-.driver-chip img,
-.driver-chip span {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.driver-chip span {
-  display: grid;
-  place-items: center;
-  background: linear-gradient(160deg, #ffd45e, #ff9b2e);
-  color: #1d1305;
-  font-weight: 950;
-}
-
-.driver-chip b {
-  max-width: 110px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #f4f7fa;
-  font-size: 12px;
-}
-
-.hud-mute {
-  font-size: 15px;
-}
-
-.hud-pause {
-  width: 44px;
-  height: 44px;
-  border: 1px solid rgba(255, 255, 255, .1);
-  border-radius: 13px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, 0) 45%),
-    linear-gradient(160deg, rgba(26, 33, 44, .9), rgba(8, 12, 18, .9));
-  color: #f4f7fa;
-  font-size: 13px;
-  font-weight: 900;
-  cursor: pointer;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .12),
-    0 10px 28px rgba(3, 7, 12, .45);
-  backdrop-filter: blur(16px);
-  transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
-}
-
-.hud-pause:hover {
-  border-color: rgba(255, 59, 78, .55);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .14),
-    0 10px 28px rgba(3, 7, 12, .5),
-    0 0 16px rgba(255, 59, 78, .35);
-}
-
-.hud-pause:active {
-  transform: translateY(1px) scale(.97);
-}
-
 .medal-verdict {
   display: flex;
   align-items: baseline;
@@ -3010,17 +3103,6 @@ kbd {
 }
 
 @media (max-width: 720px) {
-  .app-shell {
-    padding: 0;
-  }
-
-  .game-stage {
-    width: 100%;
-    height: 100dvh;
-    min-height: 100dvh;
-    border: 0;
-    border-radius: 0;
-  }
 
   .intro-backdrop {
     background:
@@ -3031,35 +3113,6 @@ kbd {
 
   h1 {
     font-size: 58px;
-  }
-
-  .hud-top {
-    top: 58px;
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
-    justify-content: center;
-    flex-wrap: nowrap;
-    gap: 0;
-  }
-
-  .hud-corner {
-    top: 10px;
-    left: 10px;
-    gap: 6px;
-  }
-
-  .hud-pause {
-    width: 40px;
-    height: 40px;
-  }
-
-  .driver-chip b {
-    display: none;
-  }
-
-  .driver-chip {
-    padding: 0 6px;
   }
 
   .road-toast {
@@ -3076,42 +3129,6 @@ kbd {
 
   .guide-controls {
     grid-template-columns: 1fr;
-  }
-
-  .hud-chip {
-    min-width: 62px;
-    padding: 6px 9px 8px;
-  }
-
-  .hud-chip b {
-    font-size: 16px;
-  }
-
-  .speedo {
-    width: 96px;
-    height: 96px;
-  }
-
-  .speedo-core {
-    inset: 15px;
-  }
-
-  .speedo-core b {
-    font-size: 26px;
-  }
-
-  .boost-meter {
-    right: 12px;
-    bottom: 188px;
-  }
-
-  .progress-map {
-    top: 112px;
-    left: auto;
-    right: 10px;
-    transform: none;
-    width: 92px;
-    padding: 6px 8px;
   }
 
   .vehicle-debug {
@@ -3536,167 +3553,15 @@ kbd {
     gap: 6px;
   }
 
-  .hud-pause {
-    width: 34px;
-    height: 34px;
-    border-color: rgba(125, 232, 255, .32);
-    background: rgba(8, 14, 22, .42);
-    box-shadow: 0 0 14px rgba(125, 232, 255, .1), inset 0 0 10px rgba(125, 232, 255, .05);
-    backdrop-filter: blur(14px);
-  }
-
-  .driver-chip {
-    display: none;
-  }
-
-  .hud-top {
-    top: 10px;
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
-    flex-wrap: nowrap;
-    gap: 0;
-    padding: 2px;
-    border-color: rgba(125, 232, 255, .32);
-    background: rgba(8, 14, 22, .42);
-    box-shadow: 0 0 16px rgba(125, 232, 255, .1), inset 0 0 12px rgba(125, 232, 255, .05);
-    backdrop-filter: blur(14px);
-  }
-
-  .hud-chip {
-    min-width: 46px;
-    padding: 4px 9px 6px;
-  }
-
-  .hud-chip b {
-    font-size: 14px;
-  }
-
-  .hud-chip::after {
-    display: none;
-  }
-
-  /* drift score is an end-of-race stat, not a live gauge */
-  .drift-chip {
-    display: none;
-  }
-
   .delta-timer {
     top: 58px;
     border-color: rgba(125, 232, 255, .32);
     background: rgba(8, 14, 22, .5);
   }
 
-  /* minimap: slim neon-outlined card, progress bar dropped (the dot shows it) */
-  .progress-map {
-    top: 54px;
-    right: 10px;
-    left: auto;
-    transform: none;
-    width: 88px;
-    padding: 7px;
-    border: 1px solid rgba(125, 232, 255, .32);
-    border-radius: 12px;
-    background: rgba(8, 14, 22, .42);
-    box-shadow: 0 0 16px rgba(125, 232, 255, .1), inset 0 0 12px rgba(125, 232, 255, .05);
-    backdrop-filter: blur(12px);
-    opacity: .92;
-  }
-
-  .progress-track {
-    display: none;
-  }
-
   .reverse-hint {
     border-color: rgba(125, 232, 255, .32);
     background: rgba(8, 14, 22, .8);
-  }
-
-  /* speedometer: floating segmented-arc gauge — neon ring, translucent core,
-     no machined bezel. Lives in the open air top-right, stacked under the
-     minimap, so the bottom of the screen stays uncluttered. */
-  .speedo {
-    top: 168px;
-    right: 12px;
-    left: auto;
-    bottom: auto;
-    transform: none;
-    width: 88px;
-    height: 88px;
-  }
-
-  .speedo::before {
-    inset: -3px;
-    padding: 1.5px;
-    background: conic-gradient(rgba(125, 232, 255, .75), rgba(255, 90, 210, .25), rgba(125, 232, 255, .75));
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    mask-composite: exclude;
-    box-shadow: none;
-    animation: rim-spin 9s linear infinite;
-  }
-
-  /* dark slices over the arc band cut the ring into gauge segments */
-  .speedo-ticks {
-    inset: 4px;
-    z-index: 1;
-    opacity: 1;
-    background: repeating-conic-gradient(from -138deg, rgba(5, 10, 16, .92) 0 2.4deg, transparent 2.4deg 13.2deg);
-    -webkit-mask-image: radial-gradient(circle, transparent 0 58%, #000 60% 92%, transparent 93%);
-    mask-image: radial-gradient(circle, transparent 0 58%, #000 60% 92%, transparent 93%);
-  }
-
-  .speedo-core {
-    inset: 13px;
-    background: rgba(8, 14, 22, .32);
-    border: 0;
-    box-shadow: none;
-    backdrop-filter: blur(8px);
-  }
-
-  .speedo-core b {
-    font-size: 23px;
-    font-weight: 700;
-    letter-spacing: 0;
-    background: none;
-    color: #eaf7ff;
-    -webkit-text-fill-color: #eaf7ff;
-    text-shadow:
-      0 0 10px rgba(125, 232, 255, .4),
-      0 0 calc(var(--heat) * 14px) rgba(255, 90, 100, calc(var(--heat) * .8));
-  }
-
-  .speedo.boosting .speedo-core b {
-    color: #ffe2b4;
-    -webkit-text-fill-color: #ffe2b4;
-    text-shadow: 0 0 18px rgba(255, 177, 46, .8);
-  }
-
-  .speedo-core small {
-    margin-top: 0;
-    color: rgba(199, 226, 240, .72);
-    font-size: 7px;
-    font-weight: 700;
-    letter-spacing: .24em;
-  }
-
-  .speedo-core .gear {
-    margin-top: 1px;
-    padding: 0;
-    min-width: 0;
-    border: 0;
-    background: none;
-    color: rgba(199, 226, 240, .78);
-    font-size: 9px;
-    letter-spacing: .2em;
-  }
-
-  .speedo-core .gear.rev {
-    background: none;
-    box-shadow: none;
-    color: #ff6b62;
-    text-shadow: 0 0 12px rgba(255, 69, 58, .8);
   }
 }
 
@@ -4108,4 +3973,128 @@ kbd {
   font-size: 12.5px;
   opacity: .65;
   font-style: italic;
+}
+
+/* Narrow viewports, whatever the input device. The overlay is sized in
+   absolutes, so without this the time collides with the map on a phone-width
+   window — the touch rules below cannot cover it, because a narrow desktop
+   window still reports a fine pointer. */
+@media (max-width: 680px) {
+  .hud-run { top: 10px; }
+  .run-time { font-size: 30px; }
+  .run-lap { font-size: 9px; letter-spacing: .24em; }
+  .run-tail { gap: 10px; font-size: 10px; }
+
+  .hud-corner { top: 12px; left: 12px; gap: 8px; }
+  .hud-icon { width: 30px; height: 30px; }
+  .hud-icon svg { width: 15px; height: 15px; }
+  .hud-driver b { display: none; }
+
+  .hud-map { top: 12px; right: 12px; width: 84px; height: 84px; }
+  .map-face { padding: 11px; }
+
+  .tacho { right: 14px; bottom: 56px; width: 128px; height: 128px; border-width: 2px; }
+  .tn { font-size: 17px; }
+  .tacho-lcd { padding: 3px 7px 3px; border-radius: 6px; }
+  .lcd { width: 46px; height: 20px; }
+  .lcd-gear { font-size: 10px; }
+  .tacho-lcd small { font-size: 6.5px; }
+
+  .nitro { right: 14px; bottom: 22px; width: 122px; gap: 7px; }
+  .nitro-bottle svg { width: 11px; height: 20px; }
+  .nitro-bar { height: 11px; }
+  .nitro-count { font-size: 13px; }
+
+  .hud-scrim {
+    background:
+      linear-gradient(180deg, rgba(3, 7, 12, .55), rgba(3, 7, 12, 0) 118px),
+      radial-gradient(150px 140px at calc(100% - 76px) calc(100% - 82px), rgba(3, 7, 12, .6), rgba(3, 7, 12, 0) 74%);
+  }
+}
+
+/* ------------------------ race HUD · touch layout -------------------------
+   Phones already carry the controls, so the overlay's job here is to take up
+   as little of the road as possible: the instruments stack down the right edge
+   where the screen is empty, and nitrous is dropped entirely because the boost
+   button in the touch cluster already shows its own charge. */
+@media (hover: none) {
+  .hud-scrim {
+    background:
+      linear-gradient(180deg, rgba(3, 7, 12, .5), rgba(3, 7, 12, 0) 108px),
+      radial-gradient(130px 150px at calc(100% - 58px) 150px, rgba(3, 7, 12, .5), rgba(3, 7, 12, 0) 74%);
+  }
+
+  .hud-corner {
+    top: 10px;
+    left: 10px;
+    gap: 8px;
+  }
+
+  .hud-icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .hud-driver {
+    display: none;
+  }
+
+  .hud-run {
+    top: 8px;
+  }
+
+  .run-time {
+    font-size: 30px;
+  }
+
+  .run-lap {
+    font-size: 9px;
+  }
+
+  /* drift is dead weight on a phone — it was already hidden here */
+  .run-drift {
+    display: none;
+  }
+
+  .hud-map {
+    top: 46px;
+    right: 10px;
+    width: 84px;
+    height: 84px;
+  }
+
+  .tacho {
+    top: 140px;
+    right: 12px;
+    bottom: auto;
+    width: 110px;
+    height: 110px;
+    border-width: 2px;
+  }
+
+  .tn {
+    font-size: 18px;
+  }
+
+  .tacho-lcd {
+    padding: 3px 6px;
+    border-radius: 5px;
+  }
+
+  .lcd {
+    width: 40px;
+    height: 18px;
+  }
+
+  .lcd-gear {
+    font-size: 9px;
+  }
+
+  .tacho-lcd small {
+    font-size: 6px;
+  }
+
+  .nitro {
+    display: none;
+  }
 }

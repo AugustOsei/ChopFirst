@@ -10,6 +10,11 @@ import * as THREE from "three";
 // setActiveTrack(id) before a race builds its scene/vehicle. The server validator
 // looks tracks up by id (getTrackData) instead, so it is concurrency-safe.
 
+// How far the drivable road surface sits above the centreline the frames return.
+// Anything that has to touch the road — the tarmac quad, the car's wheels — has to
+// agree on this number, so it lives here rather than as a literal in each place.
+export const ROAD_LIFT = 0.12;
+
 // --- Akina Ridge: the original hand-laid mountain sprint (closed loop, ~1300 m).
 // Heading +X off the line; "right" curves toward +Z.
 const AKINA_CONTROL_POINTS = [
@@ -385,8 +390,8 @@ function buildTrack(def) {
       const frame = getTrackFrame(distance);
       const left = frame.position.clone().addScaledVector(frame.normal, -half);
       const right = frame.position.clone().addScaledVector(frame.normal, half);
-      left.y += 0.12;
-      right.y += 0.12;
+      left.y += ROAD_LIFT;
+      right.y += ROAD_LIFT;
       positions.push(left.x, left.y, left.z, right.x, right.y, right.z);
       uvs.push(0, i / 8, 1, i / 8);
       if (i < sampleCount) {

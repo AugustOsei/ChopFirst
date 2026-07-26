@@ -1,8 +1,9 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Billboard, Sky, Stars, Text } from "@react-three/drei";
-import { GLBVehicle } from "./CarBodies";
+import { Billboard, Stars } from "@react-three/drei";
+import { Bloom, EffectComposer, N8AO, SMAA, Vignette } from "@react-three/postprocessing";
+import { GLBVehicle, vehicleSeatY } from "./CarBodies";
 import { forwardRef, Suspense, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import RaceHud from "./RaceHud";
@@ -26,6 +27,15 @@ import {
   TRACK,
   wrapDistance,
 } from "../game/track";
+import { foliageNoise, getTerrain, terrainHeightAt, trackDistanceAt, treelineHeight } from "../game/terrain";
+import { TRACKSIDE_ADS } from "../lib/ads";
+import {
+  makeBroadleafFoliage,
+  makeBroadleafTrunk,
+  makeConiferFoliage,
+  makeConiferTrunk,
+  makeSnagGeometry,
+} from "../game/foliage";
 import { createVehicleState, getVehicleTransform, MAX_BOOST_CHARGES, resolveCarCollision, updateVehicle } from "../game/vehicle";
 import { ANANSE_DIFFICULTIES, ANANSE_PERSONALITY, createAiInput, getAnanseLine } from "../game/ai-driver";
 import AnanseFace from "./AnanseFace";
@@ -55,40 +65,76 @@ const INITIAL_RACE = {
 // Time-of-day presets. Most of the scene is MeshStandardMaterial, so changing
 // the lights + atmosphere re-skins the whole world for free; the bright road
 // markings are MeshBasic and stay legible at night like reflective paint.
+// Each theme drives a gradient sky dome (see SkyDome) rather than a flat clear
+// colour. `dome.horizon` and the fog colour are deliberately the same value —
+// that shared colour is what makes distant geometry dissolve into the sky
+// instead of ending on a hard seam, which is what made the old flat #a8ddff
+// backdrop read as a painted wall behind the track.
 export const TIME_THEMES = {
   day: {
     label: "Day",
-    background: "#a8ddff",
-    // fog matches the sky so the horizon blends into the same blue instead of
-    // fading to grey; no atmospheric Sky shader (its sun-glow gradient made the
-    // sky shift blue->grey as you turned). Flat, consistent low-poly sky.
-    fog: ["#a8ddff", 120, 660],
-    hemisphere: ["#cfe9ff", "#3d5232", 0.55],
-    ambient: 0.35,
-    sun: { position: [40, 70, 25], color: "#fff4e0", intensity: 1.6 },
-    sky: null,
+    background: "#cfe9ff",
+    // The range is real geometry now, so fog is doing aerial perspective rather
+    // than hiding a backdrop: `near` sits past the treeline so the pass itself
+    // stays saturated, and `far` past the outermost ridge (~1300m) so distant
+    // summits are washed but never bleached flat.
+    fog: ["#cfe9ff", 300, 3000],
+    hemisphere: ["#cfe9ff", "#3d5232", 0.5],
+    ambient: 0.32,
+    sun: { position: [40, 70, 25], color: "#fff4e0", intensity: 1.75 },
+    dome: {
+      zenith: "#2f7ad6",
+      horizon: "#cfe9ff",
+      ground: "#7d9a6a",
+      sunColor: "#fffdf2",
+      sunSize: 0.9,
+      glow: 0.5,
+      haze: 2.1,
+    },
+    // cover is the fBm threshold a point must clear to be cloud: lower = more sky
+    // covered. dark is the shaded underside, light the sunlit top.
+    clouds: { cover: 0.5, opacity: 0.95, light: "#ffffff", dark: "#a8bccf" },
     stars: false,
     headlights: false,
   },
   dusk: {
     label: "Dusk",
-    background: "#e89a5c",
-    fog: ["#d77f4e", 70, 470],
+    background: "#f0a765",
+    fog: ["#f0a765", 260, 2600],
     hemisphere: ["#ffd6a0", "#241d2c", 0.4],
-    ambient: 0.3,
-    sun: { position: [-70, 16, -38], color: "#ff9442", intensity: 1.35 },
-    sky: { sunPosition: [-28, 2.2, -100], turbidity: 12, rayleigh: 3.2, mieCoefficient: 0.02 },
+    ambient: 0.26,
+    sun: { position: [-70, 16, -38], color: "#ff9442", intensity: 1.45 },
+    dome: {
+      zenith: "#241a4d",
+      horizon: "#f0a765",
+      ground: "#3a2a26",
+      sunColor: "#ffd9a0",
+      sunSize: 2.4,
+      glow: 1.5,
+      haze: 3.4,
+    },
+    clouds: { cover: 0.46, opacity: 0.9, light: "#ffd9ad", dark: "#7b4f63" },
     stars: false,
     headlights: false,
   },
   night: {
     label: "Night",
-    background: "#070b16",
-    fog: ["#070b18", 50, 360],
+    background: "#0b1226",
+    // night stays tighter on purpose — the range should be a hint, not a feature
+    fog: ["#0b1226", 140, 1500],
     hemisphere: ["#36477a", "#04060c", 0.28],
     ambient: 0.12,
-    sun: { position: [-50, 64, 36], color: "#aebfee", intensity: 0.45 },
-    sky: null,
+    sun: { position: [-50, 64, 36], color: "#aebfee", intensity: 0.5 },
+    dome: {
+      zenith: "#03040c",
+      horizon: "#16233f",
+      ground: "#070a12",
+      sunColor: "#5f74a8",
+      sunSize: 1.2,
+      glow: 0.35,
+      haze: 2.6,
+    },
+    clouds: { cover: 0.58, opacity: 0.7, light: "#39476b", dark: "#131b31" },
     stars: true,
     headlights: true,
   },
@@ -106,23 +152,65 @@ const SPACE_THEME = {
   hemisphere: ["#54468f", "#0a0716", 0.45],
   ambient: 0.18,
   sun: { position: [-160, 90, -60], color: "#ffffff", intensity: 1.5 },
-  sky: null,
+  dome: null, // SpaceBackdrop is this track's sky
+  clouds: null,
   stars: false, // the space backdrop draws its own, denser starfield
   space: true,
   headlights: true,
 };
 
-// Height of the surrounding meadow for the mountain track. The road only climbs
-// ~3m across the lap, so the ground sits just below the lowest shoulder edge and
-// the forest/rocks are planted on it — otherwise scenery floats at road height
-// over a distant plane and the road looks like it's hanging in mid-air.
-const GROUND_Y = -1.0;
+// Shadows, pixel ratio and scatter density are the three things that decide
+// whether this runs at 60fps, so they're picked once from the device rather
+// than shipped at one fixed cost. Phones keep the art direction (sky, terrain,
+// fog) and give up the expensive parts (shadow maps, 2x DPR, post, density).
+//
+// `detail` is the fourth: the small parts of the built props — scaffold legs,
+// bracing, lamp hoods — that read at walking pace and cost a draw call each at
+// racing pace. Dropping them keeps every silhouette intact, which is all a
+// phone-sized viewport resolves anyway.
+const QUALITY_HIGH = { shadows: true, shadowMap: 2048, dpr: [1, 2], scatter: 1, post: true, skyOctaves: 5, detail: true };
+const QUALITY_LOW = { shadows: false, shadowMap: 1024, dpr: [1, 1.5], scatter: 0.5, post: false, skyOctaves: 3, detail: false };
+
+function detectQuality() {
+  if (typeof window === "undefined") return QUALITY_HIGH;
+  // ?low=1 forces the phone tier on a desktop. The low path is the one nobody
+  // looks at while building — it only renders on the hardware you don't develop
+  // on — so it needs to be one query string away.
+  const params = new URLSearchParams(window.location.search);
+  if (params.has("low")) return QUALITY_LOW;
+  const coarse = !window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  const cores = navigator.hardwareConcurrency || 4;
+  if (coarse || cores <= 4) return QUALITY_LOW;
+  return { ...QUALITY_HIGH, shadowMap: cores >= 8 ? 2048 : 1024, skyOctaves: cores >= 8 ? 5 : 4 };
+}
+
+// ?nopost=1 renders the scene straight to the canvas, for A/B-ing whether a
+// look problem is the art or the composer's colour handling.
+const ENV_DEBUG_NO_POST =
+  typeof window !== "undefined" && new URLSearchParams(window.location.search).has("nopost");
+
+// Desktop-only. Ambient occlusion is the important one here, not the bloom: a
+// car with no contact darkening under it reads as hovering above the road no
+// matter how correct its shadow is, because the eye reads that dark seam where
+// two surfaces meet as the contact itself.
+function PostFX({ enabled }) {
+  if (!enabled) return null;
+  return (
+    <EffectComposer multisampling={0}>
+      <N8AO aoRadius={2.2} intensity={2.4} distanceFalloff={0.75} halfRes />
+      <Bloom mipmapBlur intensity={0.42} luminanceThreshold={0.75} luminanceSmoothing={0.3} />
+      <SMAA />
+      <Vignette offset={0.32} darkness={0.4} />
+    </EffectComposer>
+  );
+}
 
 export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", trackId = "akina-ridge", arcadeMode = false, ananseSkill = "medium", onFinish, onQuit, onRestart, onReady }) {
   // Activate the chosen track before the scene geometry and vehicle are built
   // from it below (this component renders before its RaceScene child).
   setActiveTrack(trackId);
   const theme = TRACK.environment === "space" ? SPACE_THEME : TIME_THEMES[timeOfDay] || TIME_THEMES.day;
+  const quality = useMemo(() => detectQuality(), []);
   const inputRef = useRef({ left: false, right: false, gas: false, brake: false, handbrake: false, boost: false, fire: false });
   const [race, setRace] = useState(INITIAL_RACE);
   const [ananseDialog, setAnanseDialog] = useState(null); // { line, event }
@@ -168,13 +256,26 @@ export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", 
 
   return (
     <>
-      <Canvas className="race-canvas" camera={{ position: [0, 8, 14], fov: 58, near: 0.1, far: 2000 }}>
+      <Canvas
+        className="race-canvas"
+        shadows={quality.shadows ? "soft" : false}
+        dpr={quality.dpr}
+        gl={{ antialias: true, powerPreference: "high-performance" }}
+        // far pushed past the sky dome radius so the dome is never clipped
+        camera={{ position: [0, 8, 14], fov: 58, near: 0.1, far: 3200 }}
+      >
         <color attach="background" args={[theme.background]} />
         {theme.fog && <fog attach="fog" args={theme.fog} />}
         <hemisphereLight args={theme.hemisphere} />
         <ambientLight intensity={theme.ambient} />
-        <directionalLight position={theme.sun.position} intensity={theme.sun.intensity} color={theme.sun.color} />
-        {theme.sky && <Sky {...theme.sky} />}
+        {theme.dome && (
+          <SkyDome
+            dome={theme.dome}
+            sunPosition={theme.sun.position}
+            clouds={theme.clouds}
+            quality={quality}
+          />
+        )}
         {theme.stars && (
           <>
             <Stars radius={320} depth={80} count={1400} factor={6} saturation={0} fade speed={0.4} />
@@ -186,7 +287,8 @@ export default function RaceGame({ driver, challenge, pbRun, timeOfDay = "day", 
           </>
         )}
         {theme.space && <SpaceBackdrop />}
-        <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} arcadeMode={arcadeMode} ananseSkill={ananseSkill} onFinish={onFinish} setRace={setRace} setAnanseDialog={setAnanseDialog} showDebug={showDebug} pausedRef={pausedRef} audio={audio} ghostLabels={ghostLabels} headlights={theme.headlights} onReady={onReady} />
+        <RaceScene inputRef={inputRef} challenge={challenge} pbRun={pbRun} driver={driver} arcadeMode={arcadeMode} ananseSkill={ananseSkill} onFinish={onFinish} setRace={setRace} setAnanseDialog={setAnanseDialog} showDebug={showDebug} pausedRef={pausedRef} audio={audio} ghostLabels={ghostLabels} headlights={theme.headlights} onReady={onReady} theme={theme} quality={quality} />
+        <PostFX enabled={quality.post && !ENV_DEBUG_NO_POST} />
       </Canvas>
       <RaceHud race={race} driver={driver} muted={muted} onToggleMute={() => setMuted((value) => !value)} onPause={() => setPaused(true)} />
       <TouchControls controlsRef={inputRef} boosts={race.boosts} lasers={HAZARDS.length > 0} />
@@ -247,7 +349,7 @@ function PauseOverlay({ onResume, onGuide, onQuit, onRestart, ghostLabels, onTog
   );
 }
 
-function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, ananseSkill, onFinish, setRace, setAnanseDialog, showDebug, pausedRef, audio, ghostLabels, headlights, onReady }) {
+function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, ananseSkill, onFinish, setRace, setAnanseDialog, showDebug, pausedRef, audio, ghostLabels, headlights, onReady, theme, quality }) {
   const car = useMemo(() => createVehicleState(driver?.vehicle), [driver?.vehicle]);
   // Ananse AI car: spawns on the racing line a few metres BEHIND the player so
   // the grid is staggered (player leads off the line) and neither car starts
@@ -268,6 +370,9 @@ function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, ananseSkill
   // carRef must be declared before anansCarRef — JSX order matches declaration order
   const carRef = useRef(null);
   const anansCarRef = useRef(null);
+  // Ananse's P1/P2 badge. A ref, not state: it flips every time you swap places
+  // and re-rendering the whole scene for a two-character label would be absurd.
+  const ananseRankRef = useRef("P2");
   // Ananse dialogue bubble state (managed via ref to avoid re-renders in the loop)
   const ananseDialogRef = useRef({ line: null, until: 0, lastEvent: null });
   const roadMessages = useMemo(
@@ -391,6 +496,10 @@ function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, ananseSkill
       const at = getVehicleTransform(ananseCar);
       anansCarRef.current.position.copy(at.position);
       anansCarRef.current.rotation.set(0, at.yaw, 0);
+      // Total progress, not lap distance: on the lap you cross the line and he
+      // hasn't, raw distance says he is a whole lap ahead of you.
+      const ananseRank = raceProgress(ananseCar, trackLength) > raceProgress(car, trackLength) ? "P1" : "P2";
+      ananseRankRef.current = ananseRank;
     }
     const transform = getVehicleTransform(car);
 
@@ -512,7 +621,8 @@ function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, ananseSkill
 
   return (
     <group>
-      <TrackWorld />
+      <SunLight theme={theme} car={car} quality={quality} />
+      <TrackWorld quality={quality} />
       <StartGantry countdownRef={countdownRef} />
       <Pickups collected={car.coins} lap={Math.min(TRACK.laps - 1, car.lap)} />
       <BoostStars collected={car.stars} lap={Math.min(TRACK.laps - 1, car.lap)} />
@@ -525,7 +635,7 @@ function RaceScene({ inputRef, challenge, pbRun, driver, arcadeMode, ananseSkill
       <Ghosts challenge={challenge} pbRun={pbRun} car={car} showLabels={ghostLabels} />
       <RaceCar ref={carRef} carState={car} color={driver?.color} headlights={headlights} vehicle={driver?.vehicle || "street"} />
       {arcadeMode && ananseCar && (
-        <RaceCar ref={anansCarRef} carState={ananseCar} color="#7c3aed" headlights={headlights} vehicle="street" anansePaint label="ANANSE THE AI" />
+        <RaceCar ref={anansCarRef} carState={ananseCar} color="#7c3aed" headlights={headlights} vehicle="street" anansePaint label="ANANSE" badgeRef={ananseRankRef} />
       )}
       <Particles ref={smokeRef} mode="smoke" count={70} />
       <Particles ref={sparksRef} mode="spark" count={60} />
@@ -647,7 +757,7 @@ function pbDelta(pbGhost, car, trackLength, state) {
 
 /* ---------------------------------- world ---------------------------------- */
 
-function TrackWorld() {
+function TrackWorld({ quality }) {
   const roadGeometry = useMemo(() => createRoadGeometry(), []);
   const centerLine = useMemo(() => createDashedStripGeometry(0, 0.16, 2.6, 3, 0, 0.16), []);
   const leftEdge = useMemo(() => createStripGeometry(-TRACK.width / 2 + 0.22, 0.15), []);
@@ -662,7 +772,6 @@ function TrackWorld() {
   const rightRail = useMemo(() => createRailGeometry(1), []);
   const curveMarkers = useMemo(() => createCurveMarkers(), []);
   const brakeBoards = useMemo(() => createBrakeBoards(), []);
-  const mountains = useMemo(() => createMountains(), []);
   const isCity = TRACK.environment === "city";
   const isSpace = TRACK.environment === "space";
   const gateDistance = useMemo(() => (isCity || isSpace ? longestStraightDistance() : 0), [isCity, isSpace]);
@@ -757,63 +866,265 @@ function TrackWorld() {
         </>
       ) : (
         <>
-          <Forest />
+          <Forest quality={quality} />
           <GroundCover />
           <Rocks />
+          <RoadsideBillboards quality={quality} />
         </>
       )}
-      {!isSpace && <Grandstand />}
+      {!isSpace && <Grandstand quality={quality} />}
       {curveMarkers.map((marker) => (
         <CurveMarker key={marker.key} position={marker.position} yaw={marker.yaw} direction={marker.direction} />
       ))}
       {brakeBoards.map((board) => (
         <BrakeBoard key={board.key} position={board.position} yaw={board.yaw} count={board.count} />
       ))}
-      {!isCity && !isSpace && mountains.map((mountain) => (
-        <group key={mountain.key} position={mountain.position}>
-          <mesh scale={[mountain.scale * 1.5, mountain.scale, mountain.scale * 1.5]}>
-            <coneGeometry args={[1, 1.6, 10]} />
-            <meshStandardMaterial color={mountain.color} roughness={1} flatShading />
-          </mesh>
-          {mountain.snow && (
-            <mesh position={[0, mountain.scale * 0.45, 0]} scale={[mountain.scale * 0.68, mountain.scale * 0.46, mountain.scale * 0.68]}>
-              <coneGeometry args={[1, 1.6, 10]} />
-              <meshStandardMaterial color="#eef3f7" roughness={0.85} flatShading />
-            </mesh>
-          )}
-        </group>
-      ))}
-      {!isSpace && <Clouds />}
-      {!isSpace && (
-        <mesh receiveShadow position={[TRACK.center.x, isCity ? -0.05 : GROUND_Y, TRACK.center.z]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[1600, 1600, 1, 1]} />
-          <meshStandardMaterial color={isCity ? "#8a8170" : "#4f7e3e"} roughness={1} />
-        </mesh>
-      )}
+      {!isSpace && <Terrain />}
     </group>
   );
 }
 
-function Clouds() {
-  const clouds = useMemo(() => {
-    const items = [];
-    for (let i = 0; i < 10; i += 1) {
-      const angle = (i / 10) * Math.PI * 2 + 0.4;
-      const radius = 190 + ((i * 53) % 160);
-      items.push({
-        key: `cloud-${i}`,
-        position: [TRACK.center.x + Math.cos(angle) * radius, 64 + ((i * 19) % 30), TRACK.center.z + Math.sin(angle) * radius],
-        scale: [16 + ((i * 11) % 14), 3.4 + ((i * 7) % 4), 9 + ((i * 13) % 8)],
-      });
-    }
-    return items;
-  }, []);
-  return clouds.map((cloud) => (
-    <mesh key={cloud.key} position={cloud.position} scale={cloud.scale}>
-      <sphereGeometry args={[1, 7, 5]} />
-      <meshStandardMaterial color="#fbfdff" roughness={1} transparent opacity={0.88} />
+/* ------------------------------- terrain ---------------------------------- */
+
+// The mountains are in this mesh, not on a backdrop — see game/terrain.js for
+// why. Flat shading is deliberate: every facet takes the sun at its own angle,
+// which is what gives a range its lit and shaded flanks, and it matches the
+// faceted trees and rocks already in the scene.
+function Terrain() {
+  const terrain = useMemo(() => getTerrain(), []);
+  if (!terrain) return null;
+  return (
+    <mesh
+      receiveShadow
+      geometry={terrain.geometry}
+      position={[TRACK.center.x, 0, TRACK.center.z]}
+    >
+      <meshStandardMaterial vertexColors flatShading roughness={0.97} metalness={0} />
     </mesh>
-  ));
+  );
+}
+
+/* --------------------------------- sky ------------------------------------ */
+
+// Gradient sky dome. Drawn as a big inverted sphere with depth writing off and
+// a negative render order, so it is always the backdrop no matter how far the
+// camera can see. Three bands (zenith / horizon / below) with a tunable falloff
+// give real atmospheric depth, and the sun disc is placed from the same vector
+// as the directional light so the sky and the lighting always agree.
+const SKY_VERT = `
+  varying vec3 vDir;
+  void main() {
+    vDir = normalize(position);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+// Clouds are computed in the sky shader rather than hung in the world as
+// sprites. Billboarded puffs can only ever look like airbrushed smudges: they
+// have no silhouette of their own, no self-shadowing, and they slide against
+// each other as the camera turns. Projecting the view ray onto a cloud plane
+// and running fBm on it gives real perspective (clouds compress toward the
+// horizon exactly as they should), an eroded edge, and a lit top against a
+// shaded base — for one extra draw of geometry that was already on screen.
+function makeSkyFragment(octaves) {
+  return `
+  uniform vec3 uZenith;
+  uniform vec3 uHorizon;
+  uniform vec3 uGround;
+  uniform vec3 uSunColor;
+  uniform vec3 uSunDir;
+  uniform vec3 uCloudLight;
+  uniform vec3 uCloudDark;
+  uniform float uSunSize;
+  uniform float uGlow;
+  uniform float uHaze;
+  uniform float uTime;
+  uniform float uCover;
+  uniform float uCloudOpacity;
+  varying vec3 vDir;
+
+  float hash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+
+  float vnoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
+  float fbm(vec2 p) {
+    float sum = 0.0;
+    float amp = 0.5;
+    for (int i = 0; i < ${octaves}; i++) {
+      sum += vnoise(p) * amp;
+      p = p * 2.03 + vec2(1.7, 9.2);
+      amp *= 0.5;
+    }
+    return sum;
+  }
+
+  // Density of the cloud deck along a view ray. The 1/dir.y projection is what
+  // makes distant cloud bases bunch up at the horizon instead of tiling flatly.
+  float deck(vec3 dir, float scale, vec2 drift) {
+    float y = max(dir.y, 0.045);
+    vec2 uv = dir.xz / y * scale + drift;
+    return fbm(uv);
+  }
+
+  void main() {
+    vec3 dir = normalize(vDir);
+    vec3 sun = normalize(uSunDir);
+
+    // pow() on the upward component keeps the saturated colour high overhead
+    // and squeezes the pale haze into a thin band at eye level, the way a real
+    // sky reads — a linear ramp looks like a gradient swatch instead.
+    float up = clamp(dir.y, 0.0, 1.0);
+    vec3 sky = mix(uHorizon, uZenith, pow(up, 1.0 / uHaze));
+    sky = mix(sky, uGround, clamp(-dir.y * 6.0, 0.0, 1.0));
+
+    float cosAngle = dot(dir, sun);
+    // tight core plus a wide falloff: the disc reads as a sun, the falloff is
+    // the glow that bleeds into the surrounding sky
+    float disc = smoothstep(0.9995 - uSunSize * 0.0025, 1.0, cosAngle);
+    float halo = pow(max(cosAngle, 0.0), 90.0 / max(uSunSize, 0.35)) * uGlow;
+    sky += uSunColor * (disc * 2.2 + halo);
+
+    if (uCloudOpacity > 0.001 && dir.y > 0.0) {
+      float t = uTime * 0.006;
+      float base = deck(dir, 0.55, vec2(t, t * 0.35));
+      // a second, finer deck breaks the first one's outline so edges erode
+      // instead of reading as one smooth blob
+      float detail = deck(dir, 1.9, vec2(-t * 1.7, t * 0.9));
+      float d = base + detail * 0.22 - 0.11;
+
+      // sampling the deck again a step toward the sun gives a cheap gradient:
+      // where cloud thins toward the light it brightens, where it thickens the
+      // underside goes grey. That gradient is the whole reason it reads as
+      // volume rather than a stencil.
+      vec3 lit = normalize(dir + sun * 0.35);
+      float toward = deck(lit, 0.55, vec2(t, t * 0.35));
+      float shade = clamp((d - toward) * 2.6 + 0.5, 0.0, 1.0);
+
+      float cover = smoothstep(uCover, uCover + 0.16, d);
+      // clouds thin out and dissolve into haze as they approach the horizon,
+      // which hides the point where the 1/y projection would stretch to infinity
+      float horizonFade = smoothstep(0.02, 0.30, dir.y);
+      float alpha = cover * horizonFade * uCloudOpacity;
+
+      vec3 cloud = mix(uCloudDark, uCloudLight, shade);
+      // rim brightening when looking through cloud toward the sun
+      cloud += uSunColor * pow(max(cosAngle, 0.0), 6.0) * 0.28 * (1.0 - cover * 0.6);
+      cloud = mix(cloud, uHorizon, (1.0 - horizonFade) * 0.7);
+
+      sky = mix(sky, cloud, alpha);
+    }
+
+    gl_FragColor = vec4(sky, 1.0);
+  }
+`;
+}
+
+function SkyDome({ dome, sunPosition, clouds, quality }) {
+  const materialRef = useRef(null);
+  const material = useMemo(() => {
+    const sun = new THREE.Vector3(...sunPosition).normalize();
+    const cloud = clouds || { cover: 1, opacity: 0, light: "#ffffff", dark: "#ffffff" };
+    return new THREE.ShaderMaterial({
+      vertexShader: SKY_VERT,
+      // fewer octaves on weak devices: this shader runs over the whole screen,
+      // so octave count is the single biggest lever on its cost
+      fragmentShader: makeSkyFragment(quality.skyOctaves),
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+      uniforms: {
+        uZenith: { value: new THREE.Color(dome.zenith) },
+        uHorizon: { value: new THREE.Color(dome.horizon) },
+        uGround: { value: new THREE.Color(dome.ground) },
+        uSunColor: { value: new THREE.Color(dome.sunColor) },
+        uSunDir: { value: sun },
+        uCloudLight: { value: new THREE.Color(cloud.light) },
+        uCloudDark: { value: new THREE.Color(cloud.dark) },
+        uSunSize: { value: dome.sunSize },
+        uGlow: { value: dome.glow },
+        uHaze: { value: dome.haze },
+        uTime: { value: 0 },
+        uCover: { value: cloud.cover },
+        uCloudOpacity: { value: cloud.opacity },
+      },
+    });
+  }, [dome, sunPosition, clouds, quality.skyOctaves]);
+
+  materialRef.current = material;
+  useEffect(() => () => material.dispose(), [material]);
+  useFrame((_, delta) => {
+    if (materialRef.current) materialRef.current.uniforms.uTime.value += delta;
+  });
+
+  return (
+    <mesh renderOrder={-1000} frustumCulled={false} material={material}>
+      <sphereGeometry args={[1600, 32, 20]} />
+    </mesh>
+  );
+}
+
+// The sun casts the scene's only shadows, so its shadow camera is kept small
+// and parked over the car every frame. A frustum big enough to cover the whole
+// 1.3km circuit at once would spread the same texels over ~20x the area and
+// turn every shadow into mush.
+function SunLight({ theme, car, quality }) {
+  const lightRef = useRef(null);
+  const targetRef = useRef(null);
+  // Pushed out to a fixed distance so the shadow camera's near/far can hug the
+  // scene. The old setup ran near=1/far=400 for geometry that all sat between
+  // 15m and 155m, so almost the whole depth range went unused — that is what
+  // made the shadow detach from the tyres and the car look like it was hovering.
+  const offset = useMemo(
+    () => new THREE.Vector3(...theme.sun.position).normalize().multiplyScalar(150),
+    [theme.sun.position],
+  );
+
+  useFrame(() => {
+    const light = lightRef.current;
+    const target = targetRef.current;
+    if (!light || !target || !car) return;
+    // assigning every frame is cheap and avoids a ref-timing race on mount
+    if (light.target !== target) light.target = target;
+    target.position.copy(car.position);
+    target.updateMatrixWorld();
+    light.position.copy(car.position).add(offset);
+  });
+
+  return (
+    <>
+      <object3D ref={targetRef} />
+      <directionalLight
+        ref={lightRef}
+        position={theme.sun.position}
+        intensity={theme.sun.intensity}
+        color={theme.sun.color}
+        castShadow={quality.shadows}
+        shadow-mapSize-width={quality.shadowMap}
+        shadow-mapSize-height={quality.shadowMap}
+        shadow-camera-left={-58}
+        shadow-camera-right={58}
+        shadow-camera-top={58}
+        shadow-camera-bottom={-58}
+        shadow-camera-near={70}
+        shadow-camera-far={250}
+        shadow-bias={-0.00015}
+        shadow-normalBias={0.02}
+      />
+    </>
+  );
 }
 
 /* ------------------------------ orbital highway ---------------------------- */
@@ -1324,104 +1635,137 @@ const FOREST_GREENS = ["#2f7d4a", "#256b3d", "#347b48", "#3c8a52", "#1f5e36", "#
 const FOREST_AUTUMN = ["#c8852f", "#b5772a", "#d49a3b"];
 const PINE_GREENS = ["#1f5e38", "#225f33", "#2a6b3e", "#19512e", "#266a3c"];
 
-function Forest() {
+// How far out trees are planted. Far enough to climb the near flanks of the
+// range, because a wooded lower slope running out at a ragged treeline is what
+// gives a mountain its scale — bare geometry reads as a shape, not a mountain.
+// Past this a tree is under a pixel tall anyway.
+const FOREST_RADIUS = 780;
+// Trees nearer than this to the car's likely path cast shadows; the rest do not.
+// The shadow pass redraws every caster, so letting three thousand distant trees
+// into it costs more than the whole main render and buys nothing visible.
+const FOREST_SHADOW_RADIUS = 110;
+
+function Forest({ quality }) {
   const data = useMemo(() => {
     const dummy = new THREE.Object3D();
-    const trunks = [];
-    const cones = [];
-    const coneColors = [];
-    const blobs = [];
-    const blobColors = [];
-    const length = getTrackLength();
     const c = new THREE.Color();
-    const COUNT = 150;
-    for (let i = 0; i < COUNT; i += 1) {
-      const distance = (i / COUNT) * length;
-      const frame = getTrackFrame(distance);
-      // two depth bands per step build a treeline that recedes from the road
-      // instead of a thin single row of cones
-      for (let band = 0; band < 2; band += 1) {
-        const idx = i * 2 + band;
-        const side = idx % 2 ? 1 : -1;
-        const jitter = (idx * 17) % 9;
-        const offset = side * (TRACK.railOffset + 4.4 + band * 9 + jitter);
-        const along = (((idx * 13) % 9) - 4) * 0.8;
-        const pos = frame.position
-          .clone()
-          .addScaledVector(frame.normal, offset)
-          .addScaledVector(frame.tangent, along);
-        if (!isPointClearOfRoad(pos, TRACK.railOffset + 3)) continue;
-        const scale = 0.95 + ((idx * 7) % 10) * 0.12 + band * 0.18;
-        const yaw = (idx * 1.7) % (Math.PI * 2);
-        const broadleaf = (idx * 5) % 7 === 0; // ~1 in 7 is a round broadleaf
-        const autumn = (idx * 29) % 23 === 0;
+    const near = { conifer: [], coniferColor: [], broadleaf: [], broadleafColor: [], trunkC: [], trunkB: [] };
+    const far = { conifer: [], coniferColor: [], broadleaf: [], broadleafColor: [], trunkC: [], trunkB: [] };
+    const snags = [];
+
+    const cx = TRACK.center.x;
+    const cz = TRACK.center.z;
+    const clear = TRACK.railOffset + 6;
+    const treeline = treelineHeight();
+    // Jittered grid rather than pure random: random scatter clumps and leaves
+    // bald patches at this density, and a plain grid reads as an orchard.
+    const step = 7.5;
+    let seed = 20260725;
+    const rand = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+
+    for (let gx = -FOREST_RADIUS; gx <= FOREST_RADIUS; gx += step) {
+      for (let gz = -FOREST_RADIUS; gz <= FOREST_RADIUS; gz += step) {
+        const x = cx + gx + (rand() - 0.5) * step * 1.6;
+        const z = cz + gz + (rand() - 0.5) * step * 1.6;
+        const radial = Math.hypot(x - cx, z - cz);
+        if (radial > FOREST_RADIUS) continue;
+
+        const toRoad = trackDistanceAt(x, z);
+        if (toRoad < clear) continue;
+
+        // Coverage from noise so the forest has thickets, clearings and a ragged
+        // edge. A uniform fill is the thing that makes generated woodland read
+        // as wallpaper.
+        const density = foliageNoise(x / 155, z / 155) * 0.5 + 0.5;
+        const edge = Math.min(1, (toRoad - clear) / 26); // thins toward the verge
+        let cover = density * 1.35 - 0.34;
+        cover *= 0.35 + edge * 0.65;
+
+        const ground = terrainHeightAt(x, z);
+        // Treeline. Woodland climbing a mountain flank all the way to the summit
+        // is the single loudest tell that a range is fake, and a hard cut-off is
+        // the second — so cover falls off over the last 40m and the ragged edge
+        // comes from the same noise that thins the rest of the forest.
+        cover *= 1 - Math.min(1, Math.max(0, (ground - (treeline - 40)) / 40));
+        if (cover <= 0 || rand() > cover) continue;
+
+        const yaw = rand() * Math.PI * 2;
+        const bucket = radial < FOREST_SHADOW_RADIUS || toRoad < FOREST_SHADOW_RADIUS ? near : far;
+
+        // 1 in 40 is a dead snag — cheap, and it breaks up the uniform health
+        if (rand() < 0.025) {
+          snags.push(composeMatrix(dummy, x, ground, z, 0.9 + rand() * 0.5, yaw, 7 + rand() * 5));
+          continue;
+        }
+
+        const broadleaf = rand() < 0.26;
+        const height = broadleaf ? 7 + rand() * 6 : 9 + rand() * 9;
+        const width = height * (broadleaf ? 0.78 + rand() * 0.2 : 0.62 + rand() * 0.16);
+        dummy.position.set(x, ground, z);
+        dummy.rotation.set(0, yaw, 0);
+        dummy.scale.set(width, height, width);
+        dummy.updateMatrix();
+        const matrix = dummy.matrix.clone();
 
         if (broadleaf) {
-          // a soft rounded crown built from three overlapping leaf blobs
-          const th = scale * 1.5;
-          trunks.push(composeMatrix(dummy, pos.x, GROUND_Y + th * 0.5, pos.z, scale * 0.55, 0, th));
-          const base = autumn ? FOREST_AUTUMN[idx % 3] : FOREST_GREENS[(idx * 3) % FOREST_GREENS.length];
-          const crownY = GROUND_Y + th + scale * 0.85;
-          const blobSpec = [
-            [0, 0.15, 0, 1.15],
-            [0.72, -0.28, 0.18, 0.82],
-            [-0.55, -0.18, -0.5, 0.78],
-          ];
-          blobSpec.forEach(([dx, dy, dz, s], k) => {
-            dummy.position.set(pos.x + dx * scale, crownY + dy * scale, pos.z + dz * scale);
-            dummy.rotation.set(0, yaw + k * 1.3, k * 0.35);
-            dummy.scale.set(scale * s, scale * s * 0.92, scale * s);
-            dummy.updateMatrix();
-            blobs.push(dummy.matrix.clone());
-            c.set(base);
-            if (k === 0) c.offsetHSL(0, 0, 0.06); // top blob catches the light
-            blobColors.push(c.clone());
-          });
+          const autumn = rand() < 0.07;
+          c.set(autumn ? FOREST_AUTUMN[Math.floor(rand() * 3)] : FOREST_GREENS[Math.floor(rand() * FOREST_GREENS.length)]);
+          c.offsetHSL(0, (rand() - 0.5) * 0.05, (rand() - 0.5) * 0.07);
+          bucket.broadleaf.push(matrix);
+          bucket.broadleafColor.push(c.clone());
+          bucket.trunkB.push(matrix);
         } else {
-          // conifer: a slim trunk and three stacked tiers tapering upward
-          const th = scale * 1.6;
-          trunks.push(composeMatrix(dummy, pos.x, GROUND_Y + th * 0.4, pos.z, scale * 0.45, 0, th * 0.8));
-          const base = PINE_GREENS[(idx * 3) % PINE_GREENS.length];
-          const tiers = [
-            [th * 0.5, 1.25, 1.0],
-            [th * 1.0, 0.95, 0.82],
-            [th * 1.42, 0.6, 0.66],
-          ];
-          tiers.forEach(([h, rad, tierY], k) => {
-            dummy.position.set(pos.x, GROUND_Y + h, pos.z);
-            dummy.rotation.set(0, yaw, 0);
-            dummy.scale.set(scale * rad, scale * tierY, scale * rad);
-            dummy.updateMatrix();
-            cones.push(dummy.matrix.clone());
-            c.set(base);
-            c.offsetHSL(0, 0, k * 0.045); // upper tiers a touch brighter
-            coneColors.push(c.clone());
-          });
+          c.set(PINE_GREENS[Math.floor(rand() * PINE_GREENS.length)]);
+          c.offsetHSL(0, (rand() - 0.5) * 0.06, (rand() - 0.5) * 0.08);
+          bucket.conifer.push(matrix);
+          bucket.coniferColor.push(c.clone());
+          bucket.trunkC.push(matrix);
         }
       }
     }
+
+    // white base so per-instance colours show true
+    const foliageMaterial = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.9, vertexColors: true });
     return {
-      trunks,
-      cones,
-      coneColors,
-      blobs,
-      blobColors,
-      trunkGeometry: new THREE.CylinderGeometry(0.13, 0.2, 1, 6),
-      // flat-shaded cone tiers read as crisp pine boughs
-      coneGeometry: new THREE.ConeGeometry(1, 1.7, 9),
-      // higher-detail icosahedron makes a genuinely round broadleaf crown
-      blobGeometry: new THREE.IcosahedronGeometry(1, 1),
-      trunkMaterial: new THREE.MeshStandardMaterial({ color: "#5b3d25", roughness: 1 }),
-      // white base so per-instance colors show true
-      coneMaterial: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.82, flatShading: true }),
-      blobMaterial: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.85 }),
+      near,
+      far,
+      snags,
+      coniferFoliage: makeConiferFoliage(),
+      coniferTrunk: makeConiferTrunk(),
+      broadleafFoliage: makeBroadleafFoliage(),
+      broadleafTrunk: makeBroadleafTrunk(),
+      snagGeometry: makeSnagGeometry(),
+      foliageMaterial,
+      barkMaterial: new THREE.MeshStandardMaterial({ color: "#4a3524", roughness: 1, vertexColors: true }),
+      snagMaterial: new THREE.MeshStandardMaterial({ color: "#7c6b56", roughness: 1, vertexColors: true }),
     };
   }, []);
+
+  useEffect(
+    () => () => {
+      [data.coniferFoliage, data.coniferTrunk, data.broadleafFoliage, data.broadleafTrunk, data.snagGeometry].forEach((g) => g.dispose());
+      [data.foliageMaterial, data.barkMaterial, data.snagMaterial].forEach((m) => m.dispose());
+    },
+    [data],
+  );
+
+  const group = (set, castShadow) => (
+    <>
+      <Instances matrices={set.trunkC} geometry={data.coniferTrunk} material={data.barkMaterial} castShadow={castShadow} />
+      <Instances matrices={set.conifer} colors={set.coniferColor} geometry={data.coniferFoliage} material={data.foliageMaterial} castShadow={castShadow} />
+      <Instances matrices={set.trunkB} geometry={data.broadleafTrunk} material={data.barkMaterial} castShadow={castShadow} />
+      <Instances matrices={set.broadleaf} colors={set.broadleafColor} geometry={data.broadleafFoliage} material={data.foliageMaterial} castShadow={castShadow} />
+    </>
+  );
+
   return (
     <>
-      <Instances matrices={data.trunks} geometry={data.trunkGeometry} material={data.trunkMaterial} castShadow />
-      <Instances matrices={data.cones} colors={data.coneColors} geometry={data.coneGeometry} material={data.coneMaterial} castShadow />
-      <Instances matrices={data.blobs} colors={data.blobColors} geometry={data.blobGeometry} material={data.blobMaterial} castShadow />
+      {group(data.near, quality.shadows)}
+      {group(data.far, false)}
+      <Instances matrices={data.snags} geometry={data.snagGeometry} material={data.snagMaterial} />
     </>
   );
 }
@@ -1451,9 +1795,10 @@ function GroundCover() {
         .addScaledVector(frame.normal, offset)
         .addScaledVector(frame.tangent, along);
       if (!isPointClearOfRoad(pos, TRACK.railOffset + 0.7)) continue;
+      const ground = terrainHeightAt(pos.x, pos.z);
       if (i % 3 === 0) {
         const s = 0.5 + ((i * 13) % 6) * 0.13;
-        dummy.position.set(pos.x, pos.y + s * 0.42, pos.z);
+        dummy.position.set(pos.x, ground + s * 0.42, pos.z);
         dummy.rotation.set(0, i * 0.9, 0);
         dummy.scale.set(s, s * 0.68, s);
         dummy.updateMatrix();
@@ -1462,7 +1807,7 @@ function GroundCover() {
         bushColors.push(c.clone());
       } else {
         const s = 0.4 + ((i * 5) % 5) * 0.12;
-        dummy.position.set(pos.x, pos.y + s * 0.55, pos.z);
+        dummy.position.set(pos.x, ground + s * 0.55, pos.z);
         dummy.rotation.set(0, i * 1.3, 0);
         dummy.scale.set(s, s * 1.7, s);
         dummy.updateMatrix();
@@ -1503,7 +1848,7 @@ function Rocks() {
       const pos = frame.position.clone().addScaledVector(frame.normal, side * (TRACK.railOffset + 3.4 + ((i * 7) % 6)));
       if (!isPointClearOfRoad(pos, TRACK.railOffset + 2.4)) continue;
       const scale = 0.6 + ((i * 11) % 7) * 0.22;
-      matrices.push(composeMatrix(dummy, pos.x, GROUND_Y + scale * 0.4, pos.z, scale, i * 1.3));
+      matrices.push(composeMatrix(dummy, pos.x, terrainHeightAt(pos.x, pos.z) + scale * 0.4, pos.z, scale, i * 1.3));
     }
     return {
       matrices,
@@ -1512,27 +1857,6 @@ function Rocks() {
     };
   }, []);
   return <Instances matrices={data.matrices} geometry={data.geometry} material={data.material} castShadow />;
-}
-
-function createMountains() {
-  const items = [];
-  for (let i = 0; i < 16; i += 1) {
-    const angle = (i / 16) * Math.PI * 2;
-    const radius = 430 + ((i * 37) % 110);
-    const scale = 42 + ((i * 23) % 48);
-    const position = new THREE.Vector3(TRACK.center.x + Math.cos(angle) * radius, scale * 0.8 - 26, TRACK.center.z + Math.sin(angle) * radius);
-    // keep the whole cone footprint (base radius = 1.5 * scale) away from the road
-    if (!isPointClearOfRoad(position, scale * 1.5 + TRACK.railOffset + 20)) continue;
-    items.push({
-      key: `mountain-${i}`,
-      scale,
-      position: [position.x, position.y, position.z],
-      // hazy blue-greens so the ridgeline recedes into the sky
-      color: i % 3 === 0 ? "#8aa0a0" : i % 3 === 1 ? "#7d9598" : "#93a89a",
-      snow: scale > 66,
-    });
-  }
-  return items;
 }
 
 // --- Accra city environment -------------------------------------------------
@@ -1567,6 +1891,261 @@ function makeSignTexture(lines, bg = "#0b3d2e", fg = "#f7f4ec", accent = null) {
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
   return t;
+}
+
+/* ----------------------------- name plates -------------------------------- */
+
+// The plate above a rival or a ghost. It used to be a bare line of SDF text
+// floating over the roof, which reads as a debug label rather than as that
+// car's name: nothing tied the two together, so the eye had to guess which car
+// it belonged to. The tail is what does the tying — a card with a chevron
+// pointing down at the roof is unambiguous at any angle.
+//
+// Drawn to a canvas rather than set with drei's <Text>, for three reasons: the
+// card, its border and its tail come out as one quad instead of a mesh per
+// piece; a solid backing gives the type a contrast floor that survives bright
+// sky and snowline, which a hairline outline does not; and it leaves the raster
+// under our control, so a bitmap face would stay crisp here where troika's
+// distance fields would round its corners to mush.
+
+const PLATE_CARD_H = 132;
+const PLATE_H = 196; // card + chevron tail
+const PLATE_PAD_L = 34;
+const PLATE_PAD_R = 26;
+const PLATE_GAP = 26; // between name and badge pill
+const PLATE_NAME_SIZE = 54;
+const PLATE_BADGE_SIZE = 34;
+// World height is what's fixed, not width — that way the type is the same size
+// on every plate and the card grows sideways to fit the name, instead of every
+// name sitting in a 640px box with the short ones swimming in dead space.
+const PLATE_WORLD_H = 1.02;
+
+const plateFont = (size) => `bold ${size}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+
+let plateMeasureCtx = null;
+function measurePlateText(text, size) {
+  if (!plateMeasureCtx) plateMeasureCtx = document.createElement("canvas").getContext("2d");
+  plateMeasureCtx.font = plateFont(size);
+  return plateMeasureCtx.measureText(text).width;
+}
+
+function platePath(ctx, w) {
+  const r = 18;
+  const tail = 26; // half-width of the chevron where it leaves the card
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.lineTo(w - r, 0);
+  ctx.quadraticCurveTo(w, 0, w, r);
+  ctx.lineTo(w, PLATE_CARD_H - r);
+  ctx.quadraticCurveTo(w, PLATE_CARD_H, w - r, PLATE_CARD_H);
+  ctx.lineTo(w / 2 + tail, PLATE_CARD_H);
+  ctx.lineTo(w / 2, PLATE_H);
+  ctx.lineTo(w / 2 - tail, PLATE_CARD_H);
+  ctx.lineTo(r, PLATE_CARD_H);
+  ctx.quadraticCurveTo(0, PLATE_CARD_H, 0, PLATE_CARD_H - r);
+  ctx.lineTo(0, r);
+  ctx.quadraticCurveTo(0, 0, r, 0);
+  ctx.closePath();
+}
+
+// arcTo rather than roundRect: roundRect only landed in Safari 16.4 and this
+// runs on whatever phone the player already has.
+function pillPath(ctx, x, y, w, h) {
+  const r = h / 2;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function makeNamePlate(accent, text, sampleBadge) {
+  // Names come from user input, so cap the width and shrink the type to fit
+  // rather than letting one long name produce a plate the width of the road.
+  let nameSize = PLATE_NAME_SIZE;
+  let nameW = measurePlateText(text, nameSize);
+  while (nameW > 420 && nameSize > 30) {
+    nameSize -= 2;
+    nameW = measurePlateText(text, nameSize);
+  }
+  const pillW = sampleBadge ? measurePlateText(sampleBadge, PLATE_BADGE_SIZE) + 34 : 0;
+  const width = Math.round(PLATE_PAD_L + nameW + (pillW ? PLATE_GAP + pillW : 0) + PLATE_PAD_R);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = PLATE_H;
+  const ctx = canvas.getContext("2d");
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+
+  const draw = (badge) => {
+    ctx.clearRect(0, 0, width, PLATE_H);
+
+    platePath(ctx, width);
+    ctx.fillStyle = "rgba(11,9,18,0.86)";
+    ctx.fill();
+    // the spine reads as the car's colour even when the name is unreadable at
+    // distance, which is the only cue that still works at 120m
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = accent;
+    ctx.fillRect(0, 0, 11, PLATE_CARD_H);
+    ctx.restore();
+    platePath(ctx, width);
+    ctx.strokeStyle = "rgba(255,255,255,0.16)";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    const midY = PLATE_CARD_H / 2;
+    if (badge && pillW) {
+      const pillH = 46;
+      const pillX = width - PLATE_PAD_R - pillW;
+      pillPath(ctx, pillX, midY - pillH / 2, pillW, pillH);
+      ctx.fillStyle = accent;
+      ctx.fill();
+      ctx.fillStyle = "#12101c";
+      ctx.font = plateFont(PLATE_BADGE_SIZE);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(badge, pillX + pillW / 2, midY + 1);
+    }
+
+    ctx.fillStyle = "#f6f3ff";
+    ctx.font = plateFont(nameSize);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, PLATE_PAD_L, midY + 1);
+
+    texture.needsUpdate = true;
+  };
+
+  return { texture, draw, aspect: width / PLATE_H };
+}
+
+// Scale rises with distance so the plate holds a roughly constant size on
+// screen — a perspective camera shrinks it by 1/d, so multiplying by d cancels
+// out. Clamped at both ends: uncapped it would be a postage stamp under the
+// bumper and a billboard at 150m.
+const PLATE_REF_DISTANCE = 15;
+
+// `hiddenRef` lets an owner veto the plate on its own terms — the ghosts hide
+// theirs by distance to the player rather than to the camera, which is not the
+// same number once the chase cam is a dozen metres back.
+function NamePlate({ text, badge = null, badgeRef = null, hiddenRef = null, accent = "#c9a6ff", tailY = 1.95, minDistance = 6, maxDistance = 150 }) {
+  const groupRef = useRef(null);
+  const worldPos = useMemo(() => new THREE.Vector3(), []);
+  // the badge only ever swaps between same-width tokens (P1/P2, a lap time), so
+  // one sample is enough to size the pill once at build time
+  const plate = useMemo(() => makeNamePlate(accent, text, badgeRef ? "P1" : badge), [accent, text, badge, badgeRef]);
+  const drawn = useRef(undefined);
+
+  useEffect(() => () => plate.texture.dispose(), [plate]);
+
+  useFrame((state) => {
+    const group = groupRef.current;
+    if (!group) return;
+    const next = badgeRef ? badgeRef.current : badge;
+    if (next !== drawn.current) {
+      drawn.current = next;
+      plate.draw(next);
+    }
+    group.getWorldPosition(worldPos);
+    const dist = state.camera.position.distanceTo(worldPos);
+    group.visible = !hiddenRef?.current && dist > minDistance && dist < maxDistance;
+    if (!group.visible) return;
+    group.scale.setScalar(THREE.MathUtils.clamp(dist / PLATE_REF_DISTANCE, 0.8, 2.6));
+  });
+
+  return (
+    <group ref={groupRef} position={[0, tailY, 0]}>
+      <Billboard>
+        {/* offset so the chevron tip, not the card, sits at the group origin */}
+        <mesh position={[0, PLATE_WORLD_H / 2, 0]}>
+          <planeGeometry args={[PLATE_WORLD_H * plate.aspect, PLATE_WORLD_H]} />
+          <meshBasicMaterial map={plate.texture} transparent depthWrite={false} toneMapped={false} />
+        </mesh>
+      </Billboard>
+    </group>
+  );
+}
+
+// A roadside ad board, composed rather than stretched. Every creative we have is
+// portrait, and a portrait image scaled onto a landscape panel is the single
+// most obvious way to make a paid placement look like a mistake — so the image
+// is cropped into a block on the left and the right half is set as type. The
+// texture is returned immediately with the type already on it and repainted
+// once the image arrives, so a slow asset costs the board its picture, never
+// its legibility.
+function makeAdBoardTexture(spec) {
+  const W = 1024;
+  const H = 448;
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+
+  const imageBox = { x: 26, y: 26, w: 336, h: H - 52 };
+  // A board with no creative sets its type across the full panel. The
+  // alternative — leaving the picture block empty — reads as a poster that
+  // failed to load rather than one that was designed without a picture.
+  const textX = spec.image ? imageBox.x + imageBox.w + 44 : 60;
+
+  const paint = (image) => {
+    ctx.fillStyle = spec.bg;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = spec.accent;
+    ctx.fillRect(0, 0, W, 12);
+    ctx.fillRect(0, H - 12, W, 12);
+
+    if (image) {
+      // cover-crop, so the creative keeps its aspect and fills its block
+      const scale = Math.max(imageBox.w / image.width, imageBox.h / image.height);
+      const dw = image.width * scale;
+      const dh = image.height * scale;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(imageBox.x, imageBox.y, imageBox.w, imageBox.h);
+      ctx.clip();
+      ctx.drawImage(image, imageBox.x + (imageBox.w - dw) / 2, imageBox.y + (imageBox.h - dh) / 2, dw, dh);
+      ctx.restore();
+    }
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = spec.fg;
+    ctx.font = `bold ${spec.image ? 92 : 104}px sans-serif`;
+    const step = spec.image ? 96 : 110;
+    // shorter headlines start lower so the block stays roughly centred
+    const firstY = 150 + Math.max(0, 2 - spec.headline.length) * (step * 0.42);
+    spec.headline.forEach((line, i) => ctx.fillText(line, textX, firstY + i * step));
+    const lastY = firstY + (spec.headline.length - 1) * step;
+    ctx.fillStyle = spec.accent;
+    ctx.font = "bold 40px sans-serif";
+    ctx.fillText(spec.tagline, textX, lastY + 56);
+    ctx.fillRect(textX, lastY + 76, W - textX - 60, 5);
+    ctx.fillStyle = spec.fg;
+    ctx.font = "44px sans-serif";
+    ctx.fillText(spec.domain, textX, lastY + 134);
+    texture.needsUpdate = true;
+  };
+
+  paint(null);
+  if (spec.image) {
+    const img = new Image();
+    img.onload = () => paint(img);
+    img.src = spec.image;
+  }
+  return texture;
 }
 
 function drawStar(ctx, cx, cy, outer, inner, spikes = 5) {
@@ -2256,6 +2835,87 @@ function CityBillboards() {
   });
 }
 
+/* --------------------------- roadside ad boards ---------------------------- */
+
+// Sponsor hoardings up the mountain course. Two things make a board read as a
+// real roadside structure rather than a floating poster: it stands on legs that
+// disappear into the ground rather than resting on it, and it is angled back
+// toward oncoming traffic instead of square to the road — a board you only see
+// side-on as you pass it is a board nobody reads.
+//
+// Creatives come from TRACKSIDE_ADS in lib/ads.js; adding one there adds it to
+// the rotation here with no change to this component.
+function RoadsideBillboards({ quality }) {
+  const detail = quality?.detail !== false;
+  const boards = useMemo(() => TRACKSIDE_ADS.map(makeAdBoardTexture), []);
+  // roadsideSpots offers both verges at every step; take one, alternating down
+  // the course, so a lap passes a board regularly without either side turning
+  // into a wall of hoardings
+  const spots = useMemo(() => {
+    const both = roadsideSpots({ step: 210, base: 8.5, jitter: 4, seed: 41 });
+    const out = [];
+    let lastDistance = null;
+    let flip = 0;
+    for (const s of both) {
+      if (s.distance !== lastDistance) {
+        lastDistance = s.distance;
+        flip += 1;
+      }
+      if (s.side === (flip % 2 ? 1 : -1)) out.push(s);
+    }
+    return out;
+  }, []);
+  if (!boards.length) return null;
+  return spots.map((s, idx) => {
+    const [x, y, z] = s.pos;
+    const tex = boards[idx % boards.length];
+    return (
+      <group key={`ad-${idx}`} position={[x, y, z]} rotation={[0, s.face + s.side * 0.4, 0]}>
+        {/* legs run well below ground so a board on a slope never shows daylight */}
+        {[-2.9, 2.9].map((px) => (
+          <mesh key={px} castShadow position={[px, 2.4, -0.2]}>
+            <boxGeometry args={[0.34, 9.6, 0.34]} />
+            <meshStandardMaterial color="#5c646a" roughness={0.6} metalness={0.35} />
+          </mesh>
+        ))}
+        {/* X brace between the legs, the way hoardings are actually stiffened */}
+        {detail &&
+          [0.55, -0.55].map((lean) => (
+            <mesh key={lean} position={[0, 3.1, -0.34]} rotation={[0, 0, lean]}>
+              <boxGeometry args={[0.12, 6.6, 0.12]} />
+              <meshStandardMaterial color="#5c646a" roughness={0.6} metalness={0.35} />
+            </mesh>
+          ))}
+        {/* backing box: the frame and the rear face in one piece */}
+        <mesh castShadow position={[0, 7.4, -0.16]}>
+          <boxGeometry args={[10.2, 4.75, 0.3]} />
+          <meshStandardMaterial color="#3f464b" roughness={0.75} />
+        </mesh>
+        <mesh position={[0, 7.4, 0.02]}>
+          <planeGeometry args={[9.6, 4.2]} />
+          <meshStandardMaterial map={tex} roughness={0.72} />
+        </mesh>
+        {/* lamp gantry over the top edge — four small meshes per board, which is
+            most of a board's cost once a few are in frame at once */}
+        {detail && (
+          <>
+            <mesh position={[0, 9.95, 0.5]}>
+              <boxGeometry args={[9.0, 0.1, 0.1]} />
+              <meshStandardMaterial color="#4c5359" roughness={0.6} metalness={0.35} />
+            </mesh>
+            {[-3.2, 0, 3.2].map((lx) => (
+              <mesh key={`lamp-${lx}`} position={[lx, 9.85, 0.5]} rotation={[0.9, 0, 0]}>
+                <cylinderGeometry args={[0.17, 0.22, 0.34, 8]} />
+                <meshStandardMaterial color="#2a2f33" roughness={0.5} metalness={0.4} emissive="#ffe6a8" emissiveIntensity={0.35} />
+              </mesh>
+            ))}
+          </>
+        )}
+      </group>
+    );
+  });
+}
+
 // The Black Star Gate — Accra's defining monument, built to drive under.
 function BlackStarGate({ distance }) {
   const star = useMemo(() => makeStarGeometry(1, 0.42, 0.6), []);
@@ -2830,78 +3490,277 @@ function StartGantry({ countdownRef }) {
   );
 }
 
-function Grandstand() {
-  const { position, yaw, crowd } = useMemo(() => {
-    const frame = getTrackFrame(TRACK.startDistance - 6);
-    const pos = frame.position.clone().addScaledVector(frame.normal, -(TRACK.railOffset + 7.5));
-    pos.y += 0.1;
-    // stand sits on the -normal side, so face it toward +normal (the road)
-    const yawAngle = Math.atan2(frame.tangent.x, frame.tangent.z) - Math.PI / 2;
-    const dummy = new THREE.Object3D();
-    const matrices = [];
-    const colors = [];
-    const palette = ["#ff5a4e", "#ffd45e", "#4da3ff", "#7df0ae", "#f4f6f2", "#c178ff"];
-    for (let tier = 0; tier < 3; tier += 1) {
-      for (let i = 0; i < 14; i += 1) {
-        if ((i * 7 + tier * 3) % 4 === 0) continue; // gaps in the crowd
-        dummy.position.set(-5.8 + i * 0.9 + ((tier * 13 + i * 7) % 3) * 0.12, 1.05 + tier * 0.78, -0.55 - tier * 1.05);
-        dummy.rotation.set(0, 0, 0);
-        dummy.scale.set(0.42, 0.62, 0.36);
-        dummy.updateMatrix();
-        matrices.push(dummy.matrix.clone());
-        colors.push(new THREE.Color(palette[(i + tier * 5) % palette.length]));
-      }
+/* ------------------------- start-line grandstand --------------------------- */
+
+// The old stand was three stacked slabs with a crowd of cubes on top, and it
+// read as placeholder from the first corner. What sells a temporary event
+// stand is the structure holding it up, not the seating: a stepped side cheek,
+// a riser board closing the face of every step, scaffold legs under the deck,
+// and a lean-to canopy on four poles. Those are the parts the eye uses to
+// decide something was built rather than stacked.
+//
+// The crowd is two instanced meshes — capsule bodies tinted from a clothing
+// palette, spheres above them tinted from a skin palette — so a full house
+// costs two draw calls. Standing spectators are the same two meshes with the
+// body stretched, which is why there is a `tall` argument rather than a second
+// pair of geometries.
+
+const STAND = { rows: 6, rise: 0.62, depth: 1.15, width: 15, deck: 0.9, seats: 15 };
+
+const CROWD_SHIRTS = ["#ff5a4e", "#ffd45e", "#4da3ff", "#7df0ae", "#f4f6f2", "#c178ff", "#ff9f43", "#2f8f5f", "#e8532f"];
+const CROWD_SKIN = ["#7a4a2b", "#5c3418", "#8f5b33", "#a8703f", "#4a2a12", "#6b3d1e"];
+
+// The stepped end wall. Built as a profile in (depth, height) and extruded
+// sideways, so the staircase silhouette is one piece of geometry rather than a
+// stack of boxes that never quite line up.
+function makeStandCheek() {
+  const { rows, rise, depth, deck } = STAND;
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.lineTo(0, deck);
+  for (let i = 0; i < rows; i += 1) {
+    shape.lineTo((i + 1) * depth, deck + i * rise); // tread
+    shape.lineTo((i + 1) * depth, deck + (i + 1) * rise); // riser
+  }
+  shape.lineTo(rows * depth + 0.4, deck + rows * rise);
+  shape.lineTo(rows * depth + 0.4, 0);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.2, bevelEnabled: false });
+  // profile X runs back into the hill (world -Z), the extrusion runs sideways
+  geo.rotateY(Math.PI / 2);
+  geo.translate(0, 0, depth / 2);
+  return geo;
+}
+
+function buildStandCrowd(detail) {
+  const { rows, rise, depth, deck, width, seats } = STAND;
+  const dummy = new THREE.Object3D();
+  const bodies = [];
+  const heads = [];
+  const shirts = [];
+  const skins = [];
+  let n = 0;
+
+  const place = (x, baseY, z, tall) => {
+    const turn = (((n * 37) % 23) / 23 - 0.5) * 0.7;
+    dummy.position.set(x, baseY + 0.32 * tall, z);
+    dummy.rotation.set(0, turn, 0);
+    dummy.scale.set(1, tall, 1);
+    dummy.updateMatrix();
+    bodies.push(dummy.matrix.clone());
+    dummy.position.set(x, baseY + 0.64 * tall + 0.14, z);
+    dummy.scale.set(1, 1, 1);
+    dummy.updateMatrix();
+    heads.push(dummy.matrix.clone());
+    shirts.push(new THREE.Color(CROWD_SHIRTS[(n * 5 + 3) % CROWD_SHIRTS.length]));
+    skins.push(new THREE.Color(CROWD_SKIN[(n * 3 + 1) % CROWD_SKIN.length]));
+    n += 1;
+  };
+
+  // seated, one bum per plank, with gaps — a full house looks printed. On the
+  // low tier the back rows go first: they are the ones a phone-sized viewport
+  // resolves as a single band of colour anyway.
+  const seatedRows = detail ? rows : Math.ceil(rows / 2);
+  const pitch = (width - 1.6) / (seats - 1);
+  for (let row = 0; row < seatedRows; row += 1) {
+    for (let i = 0; i < seats; i += 1) {
+      if ((i * 5 + row * 3) % 7 === 0) continue;
+      if (!detail && i % 2) continue;
+      const wobble = (((i * 13 + row * 29) % 11) / 11 - 0.5) * 0.16;
+      place(-width / 2 + 0.8 + i * pitch + wobble, deck + row * rise, -row * depth + 0.16, 1);
     }
-    return { position: pos, yaw: yawAngle, crowd: { matrices, colors } };
+  }
+  // standing at the front rail, where the view is
+  for (let i = 0; i < 19; i += 1) {
+    if (i % 5 === 3) continue;
+    if (!detail && i % 3 === 1) continue;
+    const wobble = (((i * 17) % 9) / 9 - 0.5) * 0.35;
+    place(-width / 2 + 0.6 + i * ((width + 0.8) / 18) + wobble, 0, 2.35 + ((i * 7) % 3) * 0.22, 2.2);
+  }
+  return { bodies, heads, shirts, skins };
+}
+
+function Grandstand({ quality }) {
+  const detail = quality?.detail !== false;
+  const { rows, rise, depth, width, deck } = STAND;
+  const cheek = useMemo(makeStandCheek, []);
+  const crowd = useMemo(() => buildStandCrowd(detail), [detail]);
+  const flag = useMemo(makeGhanaFlag, []);
+  const valanceSign = useMemo(() => makeSignTexture(["AKINA RIDGE"], "#a4141f", "#fff6e2", "#f4c430"), []);
+  const backBanner = useMemo(() => makeSignTexture(["START", "FINISH"], "#132a20", "#f4f6f2", "#d8202f"), []);
+  const timingSign = useMemo(() => makeSignTexture(["TIMING"], "#16314a", "#ffd54a"), []);
+
+  // The stand used to sit 6m behind the line, which put it level with the chase
+  // camera on the grid — off-frame entirely in a portrait viewport. Its width
+  // runs along the road, so moving it past the line puts the crowd in shot for
+  // the launch and you drive the length of them, which is what a pit straight
+  // does anyway.
+  const { position, yaw } = useMemo(() => {
+    const frame = getTrackFrame(TRACK.startDistance + 7);
+    const pos = frame.position.clone().addScaledVector(frame.normal, -(TRACK.railOffset + 6.0));
+    // stand sits on the -normal side, so face it toward +normal (the road)
+    return { position: pos, yaw: Math.atan2(frame.tangent.x, frame.tangent.z) - Math.PI / 2 };
   }, []);
 
-  const crowdRef = useRef(null);
+  const bodyRef = useRef(null);
+  const headRef = useRef(null);
   useLayoutEffect(() => {
-    const mesh = crowdRef.current;
-    if (!mesh) return;
-    crowd.matrices.forEach((matrix, index) => {
-      mesh.setMatrixAt(index, matrix);
-      mesh.setColorAt(index, crowd.colors[index]);
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    const write = (mesh, matrices, colors) => {
+      if (!mesh) return;
+      matrices.forEach((m, i) => {
+        mesh.setMatrixAt(i, m);
+        mesh.setColorAt(i, colors[i]);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    };
+    write(bodyRef.current, crowd.bodies, crowd.shirts);
+    write(headRef.current, crowd.heads, crowd.skins);
   }, [crowd]);
+
+  const topY = deck + rows * rise;
+  const backZ = -(rows - 1) * depth - 0.7;
+  const roofSpan = rows * depth + 1.8;
+  const roofZ = -(rows * depth) / 2 + depth / 2;
+  const roofY = 6.05;
+  const roofTilt = 0.13; // front edge lifted, so the canopy never cuts the view out
 
   return (
     <group position={position} rotation={[0, yaw, 0]}>
-      {/* tiered seating */}
-      {[0, 1, 2].map((tier) => (
-        <mesh key={tier} castShadow receiveShadow position={[0, 0.4 + tier * 0.78, -tier * 1.05]}>
-          <boxGeometry args={[13, 0.8 + tier * 0.0, 1.15]} />
-          <meshStandardMaterial color={tier % 2 ? "#5a666e" : "#4a545b"} roughness={0.8} />
-        </mesh>
-      ))}
-      {/* crowd */}
-      <instancedMesh ref={crowdRef} args={[undefined, undefined, crowd.matrices.length]} frustumCulled={false}>
-        <boxGeometry args={[1, 1, 1]} />
-        <meshStandardMaterial roughness={0.8} />
-      </instancedMesh>
-      {/* roof */}
-      {[-5.6, 5.6].map((x) => (
-        <mesh key={x} castShadow position={[x, 2.7, -1.6]}>
-          <boxGeometry args={[0.18, 2.6, 0.18]} />
-          <meshStandardMaterial color="#3d464b" roughness={0.5} />
-        </mesh>
-      ))}
-      <mesh castShadow position={[0, 4.05, -1.3]} rotation={[0.16, 0, 0]}>
-        <boxGeometry args={[13.4, 0.12, 2.6]} />
-        <meshStandardMaterial color="#d8202f" roughness={0.55} />
+      {/* levelled pad — the mountain falls away here, and a stand with daylight
+          under one corner is the tell that it was dropped in */}
+      <mesh receiveShadow position={[0, -0.55, roofZ]}>
+        <boxGeometry args={[width + 3.4, 1.2, roofSpan + 2.4]} />
+        <meshStandardMaterial color="#4b4a45" roughness={0.98} />
       </mesh>
+
+      {/* stepped end walls */}
+      {[width / 2 - 0.05, -(width / 2 + 0.15)].map((x) => (
+        <mesh key={x} castShadow receiveShadow geometry={cheek} position={[x, 0, 0]}>
+          <meshStandardMaterial color="#78828a" roughness={0.72} metalness={0.12} />
+        </mesh>
+      ))}
+
+      {/* scaffold under the deck: legs plus one run of diagonal bracing. All of
+          it lives in shadow under the seating, so it is the first thing to go. */}
+      {detail &&
+        [-5.4, -1.8, 1.8, 5.4].map((x) =>
+          [0.3, -2.4, -5.1].map((z) => (
+            <mesh key={`leg-${x}-${z}`} castShadow position={[x, (deck + Math.max(0, -z * rise / depth)) / 2, z]}>
+              <boxGeometry args={[0.16, deck + Math.max(0, (-z * rise) / depth), 0.16]} />
+              <meshStandardMaterial color="#5f686e" roughness={0.6} metalness={0.3} />
+            </mesh>
+          ))
+        )}
+      {detail &&
+        [-5.4, 1.8].map((x) => (
+          <mesh key={`brace-${x}`} position={[x + 1.8, deck + 0.6, -1.05]} rotation={[0, 0, 0.62]}>
+            <boxGeometry args={[0.09, 4.4, 0.09]} />
+            <meshStandardMaterial color="#5f686e" roughness={0.6} metalness={0.3} />
+          </mesh>
+        ))}
+
+      {/* seating: a timber plank per row with a riser board closing its face */}
+      {Array.from({ length: rows }, (_, i) => (
+        <group key={`row-${i}`}>
+          <mesh castShadow receiveShadow position={[0, deck + i * rise - 0.07, -i * depth]}>
+            <boxGeometry args={[width, 0.14, depth * 0.9]} />
+            <meshStandardMaterial color={i % 2 ? "#b3854f" : "#a67942"} roughness={0.86} />
+          </mesh>
+          <mesh receiveShadow position={[0, deck + i * rise - rise / 2, -i * depth - depth * 0.47]}>
+            <boxGeometry args={[width, rise, 0.1]} />
+            <meshStandardMaterial color="#6d6259" roughness={0.9} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* crowd — bodies tinted by shirt, heads by skin */}
+      <instancedMesh ref={bodyRef} args={[undefined, undefined, crowd.bodies.length]} castShadow frustumCulled={false}>
+        <capsuleGeometry args={[0.17, 0.3, 3, 8]} />
+        <meshStandardMaterial roughness={0.85} />
+      </instancedMesh>
+      <instancedMesh ref={headRef} args={[undefined, undefined, crowd.heads.length]} frustumCulled={false}>
+        <icosahedronGeometry args={[0.135, 1]} />
+        <meshStandardMaterial roughness={0.7} />
+      </instancedMesh>
+
+      {/* safety rail between the standing crowd and the road */}
+      {[0.62, 1.05].map((y) => (
+        <mesh key={`rail-${y}`} position={[0, y, 3.15]}>
+          <boxGeometry args={[width + 2.6, 0.08, 0.08]} />
+          <meshStandardMaterial color="#cfd9dd" metalness={0.5} roughness={0.4} />
+        </mesh>
+      ))}
+      {(detail ? [-8.2, -4.9, -1.6, 1.7, 5.0, 8.3] : [-4.9, 1.7]).map((x) => (
+        <mesh key={`railpost-${x}`} position={[x, 0.55, 3.15]}>
+          <boxGeometry args={[0.09, 1.1, 0.09]} />
+          <meshStandardMaterial color="#cfd9dd" metalness={0.5} roughness={0.4} />
+        </mesh>
+      ))}
+
+      {/* canopy on four poles */}
+      {[[width / 2 + 0.55, 0.58, 6.5], [-(width / 2 + 0.55), 0.58, 6.5], [width / 2 + 0.55, backZ, 5.6], [-(width / 2 + 0.55), backZ, 5.6]].map(
+        ([x, z, h]) => (
+          <mesh key={`post-${x}-${z}`} castShadow position={[x, h / 2, z]}>
+            <cylinderGeometry args={[0.11, 0.13, h, 8]} />
+            <meshStandardMaterial color="#6d767c" metalness={0.45} roughness={0.45} />
+          </mesh>
+        )
+      )}
+      <mesh castShadow position={[0, roofY, roofZ]} rotation={[-roofTilt, 0, 0]}>
+        <boxGeometry args={[width + 1.6, 0.12, roofSpan]} />
+        <meshStandardMaterial color="#c8202f" roughness={0.6} side={THREE.DoubleSide} />
+      </mesh>
+      {/* valance hanging off the canopy's leading edge, carrying the track name */}
+      <mesh position={[0, roofY + Math.sin(roofTilt) * (roofSpan / 2) - 0.38, roofZ + roofSpan / 2 - 0.06]}>
+        <planeGeometry args={[width + 1.4, 0.72]} />
+        <meshStandardMaterial map={valanceSign} roughness={0.75} side={THREE.DoubleSide} />
+      </mesh>
+
+      {/* back wall banner, visible over the heads of the top row */}
+      <mesh position={[0, topY + 0.55, backZ - 0.5]}>
+        <planeGeometry args={[width - 1.2, 1.5]} />
+        <meshStandardMaterial map={backBanner} roughness={0.8} side={THREE.DoubleSide} />
+      </mesh>
+
+      {/* marshals' timing box, up on legs beside the line */}
+      <group position={[-(width / 2 + 3.8), 0, 1.2]}>
+        {(detail ? [[-1.4, -1.1], [1.4, -1.1], [-1.4, 1.1], [1.4, 1.1]] : [[-1.4, 1.1], [1.4, 1.1]]).map(([lx, lz]) => (
+          <mesh key={`tl-${lx}-${lz}`} castShadow position={[lx, 1.3, lz]}>
+            <boxGeometry args={[0.16, 2.6, 0.16]} />
+            <meshStandardMaterial color="#5f686e" metalness={0.3} roughness={0.6} />
+          </mesh>
+        ))}
+        <mesh castShadow position={[0, 3.7, 0]}>
+          <boxGeometry args={[3.4, 2.2, 2.6]} />
+          <meshStandardMaterial color="#e6e1d4" roughness={0.85} />
+        </mesh>
+        <mesh position={[0, 4.0, 1.32]}>
+          <planeGeometry args={[3.0, 1.0]} />
+          <meshStandardMaterial color="#12222c" metalness={0.4} roughness={0.2} />
+        </mesh>
+        {detail && (
+          <mesh position={[0, 2.9, 1.33]}>
+            <planeGeometry args={[2.2, 0.5]} />
+            <meshStandardMaterial map={timingSign} roughness={0.8} />
+          </mesh>
+        )}
+        <mesh castShadow position={[0, 4.92, 0]} rotation={[0.1, 0, 0]}>
+          <boxGeometry args={[3.9, 0.12, 3.1]} />
+          <meshStandardMaterial color="#8f3a2c" roughness={0.7} />
+        </mesh>
+      </group>
+
       {/* flag poles */}
-      {[-7.4, 7.4].map((x) => (
-        <group key={x} position={[x, 0, 0.4]}>
-          <mesh castShadow position={[0, 2.6, 0]}>
-            <cylinderGeometry args={[0.05, 0.07, 5.2, 6]} />
+      {(detail ? [-(width / 2 + 1.5), width / 2 + 1.5] : [width / 2 + 1.5]).map((x) => (
+        <group key={`flag-${x}`} position={[x, 0, 2.4]}>
+          <mesh castShadow position={[0, 3.0, 0]}>
+            <cylinderGeometry args={[0.05, 0.07, 6.0, 6]} />
             <meshStandardMaterial color="#cfd9dd" metalness={0.5} roughness={0.4} />
           </mesh>
-          <mesh position={[0.55, 4.85, 0]}>
-            <planeGeometry args={[1.1, 0.62]} />
-            <meshStandardMaterial color={x < 0 ? "#ffd45e" : "#d8202f"} side={THREE.DoubleSide} roughness={0.7} />
+          <mesh position={[0.62, 5.5, 0]}>
+            <planeGeometry args={[1.2, 0.8]} />
+            <meshStandardMaterial map={flag} side={THREE.DoubleSide} roughness={0.75} />
           </mesh>
         </group>
       ))}
@@ -3024,7 +3883,7 @@ const WHEEL_LAYOUT = {
   trotro: { x: 0.96, fz: 1.72, rz: -1.78, r: 0.42 },
 };
 
-const RaceCar = forwardRef(function RaceCar({ carState, color, headlights, vehicle = "street", anansePaint = false, label = null }, ref) {
+const RaceCar = forwardRef(function RaceCar({ carState, color, headlights, vehicle = "street", anansePaint = false, label = null, badgeRef = null }, ref) {
   const paint = color || "#d81f33";
   // Ananse's purple car gets a gold stripe; other cars get dark or light stripe
   const stripe = anansePaint ? "#f0c040" : (["#e8ecef", "#f5b818"].includes(paint) ? "#14181d" : "#f4f7fa");
@@ -3049,9 +3908,6 @@ const RaceCar = forwardRef(function RaceCar({ carState, color, headlights, vehic
   const coreLeft = useRef(null);
   const coreRight = useRef(null);
   const boostLight = useRef(null);
-  // floating name tag (arcade rival only) + a scratch vector for its distance fade
-  const labelRef = useRef(null);
-  const labelWorld = useMemo(() => new THREE.Vector3(), []);
   // headlight spotlight aims at this object, parked ahead of the nose in local
   // space so it sweeps with the car through corners
   const headlightTarget = useMemo(() => new THREE.Object3D(), []);
@@ -3106,69 +3962,65 @@ const RaceCar = forwardRef(function RaceCar({ carState, color, headlights, vehic
       if (boostLight.current) boostLight.current.intensity = boostK * 5;
     }
 
-    // Rival name tag: readable at racing range, but fades out when the chase
-    // cam is right on top of the car so it never crowds a recorded shot.
-    if (labelRef.current) {
-      labelRef.current.getWorldPosition(labelWorld);
-      const dist = state.camera.position.distanceTo(labelWorld);
-      labelRef.current.visible = dist > 6 && dist < 150;
-    }
   });
+
+  // Everything that has to look bolted to the car hangs off one seat offset, so
+  // the body, its exhaust and its headlights can never drift apart from each other
+  // or from the tarmac. See vehicleSeatY.
+  const seat = vehicleSeatY(vehicle);
 
   return (
     <group ref={ref}>
-      <group ref={bodyRef}>
-        <Suspense fallback={null}>
-          <GLBVehicle vehicle={vehicle} paint={paint} />
-        </Suspense>
-      </group>
-      {/* boost flames live outside the rolling body so they stay behind the bumper.
-          The bike adds a red-hot inner core that only shows under boost. */}
-      {flameSpec.xs.map((x, i) => (
-        <group key={x} position={[x, flameSpec.y, flameSpec.z]}>
-          <mesh ref={i === 0 ? flameLeft : flameRight} rotation={[-Math.PI / 2, 0, 0]} scale={[0, 0, 0]}>
-            <coneGeometry args={[0.17, 1.1, 8]} />
-            <meshBasicMaterial color={flameSpec.color} transparent opacity={0.9} blending={THREE.AdditiveBlending} depthWrite={false} />
-          </mesh>
-          {hover && (
-            <mesh ref={i === 0 ? coreLeft : coreRight} rotation={[-Math.PI / 2, 0, 0]} scale={[0, 0, 0]}>
-              <coneGeometry args={[0.12, 1.0, 8]} />
-              <meshBasicMaterial color="#ff5630" transparent opacity={0.95} blending={THREE.AdditiveBlending} depthWrite={false} />
-            </mesh>
-          )}
+      <group position={[0, seat, 0]}>
+        <group ref={bodyRef}>
+          <Suspense fallback={null}>
+            <GLBVehicle vehicle={vehicle} paint={paint} />
+          </Suspense>
         </group>
-      ))}
-      {label && (
-        <Billboard ref={labelRef} position={[0, 2.55, 0]}>
-          <Text fontSize={0.6} color="#c9a6ff" outlineWidth={0.055} outlineColor="#160a2e" anchorX="center" anchorY="bottom" letterSpacing={0.04}>
-            {label}
-          </Text>
-        </Billboard>
-      )}
-      <pointLight ref={boostLight} position={[0, 0.7, flameSpec.z - 0.25]} color={flameSpec.color} intensity={0} distance={9} />
-      {headlights && (
-        <>
-          {/* the beam that actually lights the road ahead */}
-          <primitive object={headlightTarget} position={[0, -3.4, 26]} />
-          <spotLight
-            position={[0, 0.95, 2.1]}
-            target={headlightTarget}
-            color="#fff3d0"
-            intensity={42}
-            distance={62}
-            angle={0.62}
-            penumbra={0.55}
-            decay={1.1}
-          />
-          {/* visible light shafts from each lamp */}
-          {[-0.62, 0.62].map((x) => (
-            <mesh key={`beam-${x}`} position={[x, 0.6, 5.4]} rotation={[Math.PI / 2 + 0.06, 0, 0]}>
-              <coneGeometry args={[1.5, 6.6, 16, 1, true]} />
-              <meshBasicMaterial color="#fff4d2" transparent opacity={0.06} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
+        {/* boost flames live outside the rolling body so they stay behind the bumper.
+            The bike adds a red-hot inner core that only shows under boost. */}
+        {flameSpec.xs.map((x, i) => (
+          <group key={x} position={[x, flameSpec.y, flameSpec.z]}>
+            <mesh ref={i === 0 ? flameLeft : flameRight} rotation={[-Math.PI / 2, 0, 0]} scale={[0, 0, 0]}>
+              <coneGeometry args={[0.17, 1.1, 8]} />
+              <meshBasicMaterial color={flameSpec.color} transparent opacity={0.9} blending={THREE.AdditiveBlending} depthWrite={false} />
             </mesh>
-          ))}
-        </>
-      )}
+            {hover && (
+              <mesh ref={i === 0 ? coreLeft : coreRight} rotation={[-Math.PI / 2, 0, 0]} scale={[0, 0, 0]}>
+                <coneGeometry args={[0.12, 1.0, 8]} />
+                <meshBasicMaterial color="#ff5630" transparent opacity={0.95} blending={THREE.AdditiveBlending} depthWrite={false} />
+              </mesh>
+            )}
+          </group>
+        ))}
+        <pointLight ref={boostLight} position={[0, 0.7, flameSpec.z - 0.25]} color={flameSpec.color} intensity={0} distance={9} />
+        {headlights && (
+          <>
+            {/* the beam that actually lights the road ahead */}
+            <primitive object={headlightTarget} position={[0, -3.4, 26]} />
+            <spotLight
+              position={[0, 0.95, 2.1]}
+              target={headlightTarget}
+              color="#fff3d0"
+              intensity={42}
+              distance={62}
+              angle={0.62}
+              penumbra={0.55}
+              decay={1.1}
+            />
+            {/* visible light shafts from each lamp */}
+            {[-0.62, 0.62].map((x) => (
+              <mesh key={`beam-${x}`} position={[x, 0.6, 5.4]} rotation={[Math.PI / 2 + 0.06, 0, 0]}>
+                <coneGeometry args={[1.5, 6.6, 16, 1, true]} />
+                <meshBasicMaterial color="#fff4d2" transparent opacity={0.06} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} depthWrite={false} />
+              </mesh>
+            ))}
+          </>
+        )}
+      </group>
+      {/* The plate hangs off the rig, not the seated body — its chevron wants to
+          point at the roof whatever the vehicle is riding on. */}
+      {label && <NamePlate text={label} badgeRef={badgeRef} accent="#c9a6ff" tailY={1.82} />}
     </group>
   );
 });
@@ -3468,7 +4320,7 @@ function formatGhostTime(ms) {
 
 function GhostCar({ run, label, color, car, showLabel }) {
   const ref = useRef(null);
-  const labelRef = useRef(null);
+  const labelHidden = useRef(false);
   const bodyMat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
@@ -3508,20 +4360,16 @@ function GhostCar({ run, label, color, car, showLabel }) {
     // brake light inferred from the trace slowing down
     tailMat.emissiveIntensity = traceSpeed(ghost, t) < traceSpeed(ghost, t - 350) - 1.2 ? 3.2 : 0.4;
 
-    if (labelRef.current) {
-      labelRef.current.visible = dist > 7 && dist < 130;
-    }
+    // transient like the shell: the plate gets out of the way once you are on
+    // top of the ghost, and stops competing for attention when it is far off
+    labelHidden.current = !(dist > 7 && dist < 130);
   });
 
   return (
     <group ref={ref}>
       <GhostShell material={bodyMat} tailMaterial={tailMat} />
       {showLabel && label && (
-        <Billboard ref={labelRef} position={[0, 2.3, 0]}>
-          <Text fontSize={0.62} color={color} outlineWidth={0.05} outlineColor="#0b1118" anchorX="center" anchorY="bottom">
-            {`${label} · ${formatGhostTime(run.timeMs)}`}
-          </Text>
-        </Billboard>
+        <NamePlate text={label} badge={formatGhostTime(run.timeMs)} hiddenRef={labelHidden} accent={color} tailY={2.05} maxDistance={130} />
       )}
     </group>
   );
