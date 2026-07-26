@@ -4,7 +4,7 @@
 // `rival` to enable rubber-banding; the personality object tunes aggression so
 // future opponents can feel distinct without changing this file.
 
-import { getTrackFrame, getTrackLength, pointAt, TRACK, wrapDistance } from "./track.js";
+import { BOOST_PICKUPS, getTrackFrame, getTrackLength, pointAt, TRACK, wrapDistance } from "./track.js";
 
 // Default personality: Ananse. Tricky — runs a tight line, brakes late,
 // occasionally boosts. Slightly over-confident in fast corners.
@@ -46,6 +46,10 @@ export const ANANSE_PERSONALITY = {
   mercyRate: 0.03,         // …shedding this much extra m/s per metre of lead
   mercyMaxShed: 9,         // …down to at most minCruise−9 (≈ bronze pace)
   boostMaxCurvature: 0.004, // only boost when the road ahead is straighter than R=250m
+  boostFreely: false,      // true = spend boost on every open straight, not only when chasing
+  overtakeOffset: 2.6,     // metres of lateral step-out taken to pass a car ahead
+  overtakeRange: 28,       // …starting this far back, faded in as we close
+  starSeekRange: 0,        // metres ahead a boost star pulls the aim point onto its lane (0 = off)
 };
 
 // Difficulty presets: same driver brain, different appetite. Only pace fields
@@ -54,6 +58,10 @@ export const ANANSE_PERSONALITY = {
 //   easy   ≈ bronze pace: hangs with new players, almost never boosts
 //   medium ≈ silver pace: the shipped default — honest fight, keeps it close
 //   hard   ≈ gold+ pace : barely any mercy, boosts on sight, brakes later
+//   legend ≈ flat out   : no rubber band worth the name, sub-1:40 on Akina
+//
+// Measured 3-lap Akina solo times (scripts/ai-sim.sh `pace` scenario):
+//   easy 147 s · medium 133 s · hard 104 s · legend 99 s
 export const ANANSE_DIFFICULTIES = {
   easy: {
     ...ANANSE_PERSONALITY,
@@ -76,8 +84,36 @@ export const ANANSE_DIFFICULTIES = {
     pushGap: -8,
     mercyGap: 350,
     mercyMaxShed: 4,
-    cornerConfidence: 0.92,
-    brakeDecel: 36,
+    cornerConfidence: 1.0,
+    // The planner used to assume 36 m/s² while the car brakes at
+    // STREET_TUNING.BRAKE_DECEL = 44, so it lifted a fifth earlier than it had
+    // to for every corner on the lap.
+    brakeDecel: 44,
+    boostFreely: true,
+    boostMaxCurvature: 0.008,
+  },
+  // Legend: the benchmark tier. He drives his own race rather than yours —
+  // the rubber band is nearly flat and the mercy band is gone, so the clock is
+  // the opponent. Corner confidence above 1 means he leans past the speed the
+  // planner calls "holdable"; the margin is real (the planner models steering
+  // lock and yaw rate, not grip) and headless runs take zero rail contacts.
+  legend: {
+    ...ANANSE_PERSONALITY,
+    raceCruise: 48,
+    rubberBandGain: 0.08,
+    minCruise: 44,
+    maxCruise: 52,
+    pushGap: -4,
+    mercyGap: Infinity, // never eases off, however far ahead he gets
+    mercyMaxShed: 0,
+    cornerConfidence: 1.2,
+    minCornerSpeed: 13,
+    brakeDecel: 44,
+    boostFreely: true,
+    boostMaxCurvature: 0.01,
+    // Only this tier plays the boost economy: five of nine stars was the real
+    // ceiling on his pace, and collecting them is worth ~2 s a race.
+    starSeekRange: 40,
   },
 };
 
@@ -191,7 +227,45 @@ export function createAiInput(car, personality = ANANSE_PERSONALITY, rival = nul
   // The aim distance grows with speed so fast sections steer smoothly and slow
   // hairpins aim close enough to actually rotate through the corner.
   const aimDist = Math.min(aimMax, Math.max(aimMin, aimBase + Math.max(0, speed) * aimPerSpeed));
-  const aim = pointAt(wrapDistance(car.distance + aimDist), targetLateral);
+  const aimAt = wrapDistance(car.distance + aimDist);
+  let aimLateral = targetLateral;
+
+  // --- Boost stars. Each one refills boost to full, and on the tiers that
+  // spend boost freely that supply is what sets the lap time — he was arriving
+  // at four of the nine stars in a race 1.9–2.2 m off line and sailing past
+  // them (the grab window is 1.7 m). Pure pursuit wanders that far off centre
+  // on its own, so aim at the star's own lateral while one is in reach. Cheap:
+  // the stars sit on straights by design, so this costs no corner speed.
+  if (personality.starSeekRange) {
+    for (let i = 0; i < BOOST_PICKUPS.length; i += 1) {
+      if (car.stars && car.stars.has(car.lap * 1000 + i)) continue;
+      const ahead = wrapDistance(BOOST_PICKUPS[i].distance - car.distance);
+      if (ahead > 0 && ahead < personality.starSeekRange) {
+        aimLateral = BOOST_PICKUPS[i].lateral;
+        break;
+      }
+    }
+  }
+
+  // Overtaking: aiming at the centre line means aiming at exactly where the
+  // rival already is, so catching a slower car used to mean queueing on its
+  // bumper for the rest of the race — 70% of a race in contact, and a
+  // guaranteed half-second loss at the flag. Step off the line and go round on
+  // whichever side has more road, faded in as we close so it reads as a
+  // committed dive rather than a twitch. Phantom pace rivals (the headless QA
+  // scenarios) carry no lateral, and aren't really on the road, so skip them.
+  if (rival && personality.overtakeOffset && Number.isFinite(rival.lateral)) {
+    const along = wrapDistance(rival.distance - car.distance);
+    const range = personality.overtakeRange;
+    if (along > 0 && along < range && Math.abs(aimLateral - rival.lateral) < 2.4) {
+      const side = rival.lateral > 0 ? -1 : 1;
+      const want = rival.lateral + side * personality.overtakeOffset;
+      const room = TRACK.railOffset - 1.8; // keep the pass inside the rails
+      const urgency = 1 - along / range;
+      aimLateral = Math.max(-room, Math.min(room, aimLateral + (want - aimLateral) * urgency));
+    }
+  }
+  const aim = pointAt(aimAt, aimLateral);
 
   // Bearing from the car to the aim point, compared to where the nose points.
   const toAim = Math.atan2(aim.x - car.position.x, aim.z - car.position.z);
@@ -271,11 +345,15 @@ export function createAiInput(car, personality = ANANSE_PERSONALITY, rival = nul
   const cruiseCap = boosting ? cruise + 12 : cruise;
   const gas = pinned || (!brake && over < -0.3 && speed < cruiseCap);
 
-  // --- Boost: only when chasing (well behind, or biting back after a hit) and
-  // the road right ahead is genuinely open — never to pad a lead.
+  // --- Boost. On the lower tiers: only when chasing (well behind, or biting
+  // back after a hit) and the road right ahead is genuinely open — never to pad
+  // a lead. From `hard` up, boostFreely drops the chasing condition: he banks
+  // ~5 charges of coins and 6 full refills from boost stars over a race and was
+  // finishing with all of it unspent, which cost him about 16 s over three laps.
+  // The 1.5 s burn / 2.2 s cooldown caps the duty at ~40% on its own.
   const nearK = trackCurvature(car.distance + 8, 6);
   const boost = !pinned
-    && (pushing || gap < personality.pushGap)
+    && (personality.boostFreely || pushing || gap < personality.pushGap)
     && car.boostCharges > 0
     && car.boostCooldown <= 0
     && nearK < boostMaxCurvature
