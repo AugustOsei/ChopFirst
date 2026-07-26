@@ -3,8 +3,13 @@
 import { useState } from "react";
 import { logEvent } from "../lib/log-event";
 
-export default function FeedbackModal({ driverName, onClose }) {
-  const [type, setType] = useState("bug");
+// `initialType` opens the form on a given tab — "pace" is used by the arcade
+// finish screen so a player who just walked the race lands straight on the
+// question we actually want answered. `context` is a short machine-written note
+// (difficulty, time, winning margin) appended to the report so pace feedback
+// arrives with the numbers attached instead of "he was too slow".
+export default function FeedbackModal({ driverName, onClose, initialType = "bug", context = "" }) {
+  const [type, setType] = useState(initialType);
   const [text, setText] = useState("");
   const [contact, setContact] = useState("");
   const [state, setState] = useState("idle"); // idle | sending | sent | error
@@ -17,7 +22,14 @@ export default function FeedbackModal({ driverName, onClose }) {
       const res = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, message: text.trim(), contact: contact.trim(), name: driverName || "" }),
+        body: JSON.stringify({
+          type,
+          message: text.trim(),
+          contact: contact.trim(),
+          name: driverName || "",
+          // sent separately so it can never be squeezed out by the 500-char cap
+          context: type === "pace" ? context : "",
+        }),
       });
       if (res.ok) logEvent("feedback_sent");
       setState(res.ok ? "sent" : "error");
@@ -55,15 +67,28 @@ export default function FeedbackModal({ driverName, onClose }) {
               >
                 💡 Suggest a feature
               </button>
+              <button
+                type="button"
+                className={`feedback-type${type === "pace" ? " selected" : ""}`}
+                onClick={() => setType("pace")}
+              >
+                🏁 Ananse&apos;s pace
+              </button>
             </div>
             <label className="field">
-              {type === "bug" ? "What went wrong?" : "What should the game add?"}
+              {type === "bug" ? "What went wrong?"
+                : type === "pace" ? "Was Ananse too slow, or too fast?"
+                : "What should the game add?"}
               <textarea
                 value={text}
                 onChange={(event) => setText(event.target.value)}
                 maxLength={500}
                 rows={4}
-                placeholder={type === "bug" ? "What happened, and what did you expect?" : "Describe your idea"}
+                placeholder={
+                  type === "bug" ? "What happened, and what did you expect?"
+                    : type === "pace" ? "e.g. I beat him on Unleashed without using a boost — he needs to be quicker"
+                    : "Describe your idea"
+                }
                 autoFocus
               />
             </label>

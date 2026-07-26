@@ -15,17 +15,27 @@ function looksLikeEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-async function emailFeedback({ type, message, name, contact }) {
-  const isIdea = type === "idea";
+// Report types the form can send. "pace" comes from the arcade finish screen
+// and carries a machine-written `context` line (difficulty, time, margin) so
+// "he's too slow" arrives with the numbers that make it actionable.
+const TYPE_LABELS = {
+  bug: ["🐞 Bug report", "Bug report"],
+  idea: ["💡 Feature idea", "Feature idea"],
+  pace: ["🏁 Ananse pace", "Ananse's pace"],
+};
+
+async function emailFeedback({ type, message, name, contact, context }) {
+  const [subjectLabel, textLabel] = TYPE_LABELS[type] || TYPE_LABELS.bug;
   const body = {
     from: FEEDBACK_EMAIL_FROM,
     to: [FEEDBACK_EMAIL_TO],
-    subject: `${isIdea ? "💡 Feature idea" : "🐞 Bug report"} — ChopFirst`,
+    subject: `${subjectLabel} — ChopFirst`,
     text: [
-      `Type:    ${isIdea ? "Feature idea" : "Bug report"}`,
+      `Type:    ${textLabel}`,
       `From:    ${name || "(anonymous)"}`,
       `Contact: ${contact || "(none)"}`,
       `Time:    ${new Date().toISOString()}`,
+      ...(context ? [`Race:    ${context}`] : []),
       "",
       message,
     ].join("\n"),
@@ -61,10 +71,11 @@ export async function POST(request) {
   }
 
   const payload = {
-    type: body.type === "idea" ? "idea" : "bug",
+    type: TYPE_LABELS[body.type] ? body.type : "bug",
     message: message.slice(0, 500),
     name: String(body.name || "").slice(0, 32),
     contact: String(body.contact || "").slice(0, 80),
+    context: String(body.context || "").slice(0, 160),
   };
 
   try {
