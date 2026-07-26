@@ -463,6 +463,9 @@ button {
 
 /* ============================ landing page ============================ */
 .landing {
+  /* Height of the sticky nav, which sits in normal flow above the hero.
+     .hero subtracts this so a "full screen" hero really is one screen. */
+  --nav-h: 66px;
   position: fixed;
   inset: 0;
   overflow-y: auto;
@@ -538,11 +541,15 @@ button {
 /* hero */
 .hero {
   position: relative;
-  min-height: 100dvh;
+  /* The sticky nav is in normal flow above this section, so a full 100dvh hero
+     always overhangs the fold by the nav's height — which pushed the "see the
+     game" scroll cue (pinned to the hero's bottom) permanently off-screen.
+     Subtract the nav so the hero really is one screen. */
+  min-height: calc(100dvh - var(--nav-h, 66px));
   display: grid;
   place-items: center;
   text-align: center;
-  padding: 80px 20px 60px;
+  padding: 24px 20px 60px;
   overflow: hidden;
 }
 
@@ -562,16 +569,17 @@ button {
   backface-visibility: hidden;
 }
 /* Four hero stills slow-zoom (Ken Burns) and cross-dissolve on a shared 40s
-   loop — three circuits and the rivalry. The Orbital Highway leads (newest and
-   most striking art, so it's what a fresh visitor sees), then Akina, Accra, and
-   Arcade last, landing on Ananse right before the loop restarts.
+   loop — three circuits and the rivalry. Arcade leads: it is the one slide
+   about people rather than a place, so it's the strongest first impression a
+   fresh visitor can get. Then Orbital, Akina, and Accra.
 
    Each slide owns a quarter of the loop with a 5% crossfade at each edge; the
-   windows have to stay flush or the hero flashes through to the page behind. */
-.hero-art.is-orbital { object-position: 50% 44%; animation: heroFadeA 40s ease-in-out infinite, heroKenC 40s ease-in-out infinite; }
-.hero-art.is-akina { animation: heroFadeB 40s ease-in-out infinite, heroKenA 40s ease-in-out infinite; }
-.hero-art.is-accra { object-position: 50% 56%; animation: heroFadeC 40s ease-in-out infinite, heroKenB 40s ease-in-out infinite; }
-.hero-art.is-arcade { object-position: 50% 44%; animation: heroFadeD 40s ease-in-out infinite, heroKenA 40s ease-in-out infinite; }
+   windows have to stay flush or the hero flashes through to the page behind.
+   Fade slot A is the one showing at t=0 — that is what "shows first" means. */
+.hero-art.is-arcade { object-position: 50% 44%; animation: heroFadeA 40s ease-in-out infinite, heroKenA 40s ease-in-out infinite; }
+.hero-art.is-orbital { object-position: 50% 44%; animation: heroFadeB 40s ease-in-out infinite, heroKenC 40s ease-in-out infinite; }
+.hero-art.is-akina { animation: heroFadeC 40s ease-in-out infinite, heroKenA 40s ease-in-out infinite; }
+.hero-art.is-accra { object-position: 50% 56%; animation: heroFadeD 40s ease-in-out infinite, heroKenB 40s ease-in-out infinite; }
 /* Mirrors the <picture> breakpoint: below it the stacked portrait art is
    served, and a short-but-wide window crops it to the drivers' midriffs unless
    the framing is pulled up to their faces. */
@@ -598,8 +606,9 @@ button {
   100% { transform: scale(1.1) translate(-1%, 1%); }
 }
 @media (prefers-reduced-motion: reduce) {
+  /* No rotation at all — hold the lead slide, which is now Arcade. */
   .hero-art.is-akina, .hero-art.is-accra, .hero-art.is-orbital, .hero-art.is-arcade { animation: none; }
-  .hero-art.is-akina, .hero-art.is-accra, .hero-art.is-arcade { opacity: 0; }
+  .hero-art.is-akina, .hero-art.is-accra, .hero-art.is-orbital { opacity: 0; }
 }
 
 .hero-scrim {
@@ -618,7 +627,9 @@ button {
 }
 
 .hero-logo {
-  margin-top: 6px;
+  /* now an <h1> — kill the UA heading margins, which at this font size add
+     ~80px of dead space under the wordmark */
+  margin: 6px 0 0;
 }
 
 .hero-logo .brand-chop { font-size: clamp(58px, 12vw, 118px); }
@@ -1075,12 +1086,13 @@ button {
 
 .feedback-types {
   display: flex;
+  flex-wrap: wrap; /* three types don't fit one phone-width row */
   gap: 10px;
   margin: 16px 0 4px;
 }
 
 .feedback-type {
-  flex: 1;
+  flex: 1 1 128px;
   min-height: 44px;
   border: 1px solid rgba(255, 255, 255, .2);
   border-radius: 8px;
@@ -2829,6 +2841,40 @@ textarea:focus {
   gap: 14px;
 }
 
+/* The two modes, side by side under the lede — the guide used to describe only
+   Time Attack, so a reader could finish it without learning Arcade existed. */
+.guide-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 14px 0 4px;
+}
+
+.guide-modes > div {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  background: rgba(255, 255, 255, .04);
+}
+
+.guide-modes h4 {
+  margin: 0 0 5px;
+  color: #ffd15c;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.guide-modes p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #b9c6d8;
+}
+
+@media (max-width: 560px) {
+  .guide-modes { grid-template-columns: 1fr; }
+}
+
 .guide-controls ul,
 .guide-tips {
   margin: 0;
@@ -3100,7 +3146,8 @@ kbd {
     order: 0;
   }
 
-  .nav-links button:not(.nav-cta) {
+  /* The drawer toggle is exempt — it is what replaces these links on a phone. */
+  .nav-links button:not(.nav-cta):not(.nav-toggle) {
     display: none;
   }
 
@@ -3730,12 +3777,37 @@ kbd {
 /* ---- Arcade lobby split layout ---- */
 .arcade-lobby-screen { /* inherits .garage-screen */ }
 
-.arcade-split {
-  display: grid;
-  grid-template-columns: 0.85fr 1.15fr;
-  gap: 24px;
-  align-items: start;
+/* The setup wizard stacks by default — opponent first, then the step's own
+   content — so on a phone the order always reads "here is who you're racing,
+   here is what you do next". The old side-by-side grid put the opponent in
+   column one, which collapsed to "giant Ananse on top of everything" and made
+   the step heading look like a label for his portrait. Two columns come back
+   only on step 1, and only when there is genuinely room for them. */
+.arcade-opponent,
+.arcade-step {
   margin-bottom: 16px;
+}
+
+@media (min-width: 900px) {
+  .arcade-lobby-screen .garage-inner:has(.arcade-opponent:not(.compact)) {
+    display: grid;
+    grid-template-columns: 0.85fr 1.15fr;
+    grid-template-areas:
+      "head head"
+      "opp  step"
+      "bar  bar";
+    gap: 0 24px;
+    align-items: start;
+  }
+  .arcade-lobby-screen .garage-inner:has(.arcade-opponent:not(.compact)) > .garage-head { grid-area: head; }
+  .arcade-lobby-screen .garage-inner:has(.arcade-opponent:not(.compact)) > .arcade-opponent { grid-area: opp; }
+  .arcade-lobby-screen .garage-inner:has(.arcade-opponent:not(.compact)) > .arcade-step { grid-area: step; }
+  .arcade-lobby-screen .garage-inner:has(.arcade-opponent:not(.compact)) > .start-bar { grid-area: bar; }
+  /* Side by side there is room for much more of the standing pose, but not all
+     of it: uncapped it runs 563px and pushes his speech bubble underneath the
+     sticky start bar. 380px keeps the column near the step column's height. */
+  .arcade-opponent:not(.compact) .ananse-hero-wrap { max-height: 380px; }
+  .arcade-opponent:not(.compact) .ananse-hero-img { height: 380px; object-position: 50% 22%; }
 }
 
 /* small uppercase label that heads each side of the split */
@@ -3747,10 +3819,10 @@ kbd {
   color: rgba(196,210,222,.5);
   margin: 0 0 12px;
 }
-.arcade-ananse-side .arcade-side-label { color: rgba(212,160,23,.75); }
+.arcade-opponent .arcade-side-label { color: rgba(212,160,23,.75); }
 
-/* ---- Ananse's side ---- */
-.arcade-ananse-side {
+/* ---- Ananse's block (full hero on step 1) ---- */
+.arcade-opponent {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -3770,12 +3842,17 @@ kbd {
   overflow: hidden;
   border: 1px solid rgba(212,160,23,.22);
   background: #140a24;
+  /* Capped by default. Stacked above the step's content, a full-height hero
+     pushes the actual controls off the fold — a cropped band still says
+     "this is your opponent". The ≥900px two-column layout lifts the cap. */
+  max-height: 190px;
 }
 .ananse-hero-img {
   display: block;
   width: 100%;
-  height: auto;
+  height: 190px;
   object-fit: cover;
+  object-position: 50% 16%;
 }
 .ananse-hero-plate {
   position: absolute;
@@ -3826,11 +3903,91 @@ kbd {
   border-bottom-color: rgba(212, 160, 23, .4);
 }
 
-/* ---- Player's side in arcade lobby ---- */
-.arcade-player-side {
+/* ---- Compact opponent strip, used on steps 2+ ---- */
+.arcade-opponent.compact {
+  padding: 12px 14px;
+}
+.arcade-opponent.compact .arcade-side-label { margin-bottom: 8px; }
+
+.ananse-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ananse-strip-text {
+  min-width: 0;
+}
+
+.ananse-strip-text b {
+  display: block;
+  font-size: 13px;
+  color: #ffe8a1;
+  letter-spacing: .02em;
+}
+
+.ananse-strip-text span {
+  display: block;
+  font-size: 12.5px;
+  font-style: italic;
+  line-height: 1.35;
+  color: rgba(244, 240, 230, .78);
+}
+
+/* ---- The step the player is actually on ---- */
+.arcade-step {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.arcade-step-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.arcade-step-count {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: rgba(240, 192, 64, .8);
+}
+
+.arcade-step-dots {
+  display: inline-flex;
+  gap: 5px;
+}
+
+.arcade-step-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .18);
+}
+
+.arcade-step-dots i.done { background: rgba(240, 192, 64, .45); }
+.arcade-step-dots i.on   { background: #f0c040; }
+
+.arcade-step-title {
+  margin: 0;
+  font-size: clamp(1.25rem, 4.5vw, 1.6rem);
+  line-height: 1.15;
+  color: #f4f0e6;
+}
+
+.arcade-step-hint {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  /* a solid colour, not opacity: the card is translucent and the scene behind
+     it shows through, which made an opacity-dimmed hint unreadable */
+  color: rgba(244, 240, 230, .72);
 }
 
 /* note above the arcade track picker explaining the single available circuit */
@@ -3921,14 +4078,17 @@ kbd {
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* ---- Responsive: stack arcade lobby on small screens ---- */
+/* ---- Responsive: arcade lobby on small screens ---- */
 @media (max-width: 680px) {
-  .arcade-split {
-    grid-template-columns: 1fr;
-  }
-  /* on a phone the hero would eat the screen — cap its height and crop */
-  .ananse-hero-wrap { max-height: 260px; }
-  .ananse-hero-img { height: 260px; object-position: 50% 20%; }
+  /* On a phone the hero eats the screen and pushes the step's own controls
+     below the fold, so crop it hard: the point of step 1's hero is to say
+     "this is your opponent", which a 190px band does perfectly well. */
+  .arcade-opponent { padding: 14px; }
+  /* Put the picker directly under the step heading and demote the 339px
+     preview to confirmation below it. Preview-then-picker costs a full screen
+     of scrolling before the player can act on what the heading just asked. */
+  .arcade-step-head { order: -2; }
+  .arcade-step .car-cards { order: -1; }
   /* phones: a touch higher — the viewport is shorter and the thumb controls
      own the bottom half */
   .ananse-hud-bubble { top: 27%; left: 10px; }
@@ -3970,6 +4130,69 @@ kbd {
   line-height: 1.35;
 }
 
+/* ---- Arcade finish: pace check ----
+   Shown after a win. Asks the question directly and pairs the instant fix
+   (step him up) with the slow one (tell us), so neither reads as a dead end. */
+.pace-check {
+  margin: 14px 0 4px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(240, 192, 64, .08);
+  border: 1px solid rgba(240, 192, 64, .3);
+}
+
+.pace-check b {
+  display: block;
+  font-size: .98rem;
+  color: #ffe8a1;
+  margin-bottom: 5px;
+}
+
+.pace-check p {
+  margin: 0 0 11px;
+  font-size: .85rem;
+  line-height: 1.45;
+  color: rgba(244, 240, 230, .8);
+}
+
+.pace-check em {
+  font-style: normal;
+  font-weight: 800;
+  color: #ffe8a1;
+}
+
+.pace-check-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pace-step-up,
+.pace-report {
+  flex: 1 1 auto;
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.pace-step-up {
+  border: 1px solid rgba(240, 192, 64, .55);
+  background: rgba(240, 192, 64, .18);
+  color: #ffe8a1;
+}
+
+.pace-report {
+  border: 1px solid rgba(255, 255, 255, .2);
+  background: rgba(255, 255, 255, .06);
+  color: #d5deea;
+}
+
+.pace-step-up:hover { background: rgba(240, 192, 64, .28); }
+.pace-report:hover  { background: rgba(255, 255, 255, .12); }
+
 /* ---- Arcade difficulty selector ---- */
 .arcade-skill-row {
   margin-bottom: 16px;
@@ -3983,7 +4206,10 @@ kbd {
 .arcade-skill-hint {
   margin: 8px 0 0;
   font-size: 12.5px;
-  opacity: .65;
+  line-height: 1.45;
+  /* solid colour rather than opacity — the panel is translucent and the scene
+     behind it was showing straight through the dimmed text */
+  color: rgba(244, 240, 230, .72);
   font-style: italic;
 }
 
@@ -4109,4 +4335,269 @@ kbd {
   .nitro {
     display: none;
   }
+}
+
+/* ---- About panel ----
+   Rides on .guide-card for the shell (size, scroll, close button) and only adds
+   what's specific: the portrait header, the project list and the contact block. */
+.about-card {
+  width: min(560px, 100%);
+}
+
+.about-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.about-photo {
+  width: 88px;
+  height: 88px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 209, 92, .5);
+  background: #16202b;
+}
+
+/* Stand-in until a portrait exists at ABOUT.photo — initials on the brand gold,
+   so an absent file reads as a design choice rather than a missing asset. */
+.about-monogram {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: .02em;
+  color: #0b1219;
+  background: linear-gradient(150deg, #ffd15c, #e0932a);
+}
+
+.about-id {
+  min-width: 0;
+}
+
+.about-name {
+  margin: 0 0 4px;
+  font-size: clamp(1.3rem, 5vw, 1.7rem);
+  line-height: 1.1;
+}
+
+.about-role {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  color: #ffd15c;
+}
+
+.about-bases {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: rgba(213, 222, 234, .8);
+}
+
+.about-body p {
+  margin: 0 0 11px;
+  color: #d5deea;
+  line-height: 1.6;
+  font-size: .93rem;
+}
+
+.about-projects ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.about-projects li {
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  background: rgba(255, 255, 255, .04);
+}
+
+.about-projects li a,
+.about-projects li b {
+  display: block;
+  font-size: 14px;
+  font-weight: 800;
+  color: #ffd15c;
+  text-decoration: none;
+  margin-bottom: 2px;
+}
+
+.about-projects li a:hover {
+  text-decoration: underline;
+}
+
+/* Direct child only — the link's trailing ↗ is a span too, and an unscoped
+   rule turned it into a block that dropped onto its own line. */
+.about-projects li > span {
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: rgba(213, 222, 234, .8);
+}
+
+.about-contact p {
+  margin: 0 0 12px;
+  font-size: .9rem;
+  line-height: 1.55;
+  color: #d5deea;
+}
+
+.about-contact a {
+  color: #ffd15c;
+}
+
+.about-cta {
+  display: block;
+  width: 100%;
+  text-align: center;
+  text-decoration: none;
+  line-height: 44px;
+}
+
+.about-site {
+  margin: 12px 0 0 !important;
+  text-align: center;
+  font-size: 12.5px;
+}
+
+@media (max-width: 520px) {
+  .about-head {
+    gap: 13px;
+  }
+  .about-photo {
+    width: 68px;
+    height: 68px;
+  }
+  .about-monogram {
+    font-size: 24px;
+  }
+}
+
+/* ---- Mobile nav drawer ----
+   Under 760px `.nav-links button:not(.nav-cta)` is display:none, which left a
+   phone with no route to Rivals / Leaderboard / How to play / About except
+   scrolling to the footer. The toggle below is the phone's entire top nav, so
+   it carries one more item than the desktop row (Feedback) and mirrors the
+   footer links. Hidden entirely at desktop width, where the inline row is back. */
+.nav-toggle {
+  display: none;
+  position: relative;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .08);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-burger {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 18px;
+  height: 14px;
+}
+
+.nav-burger i {
+  display: block;
+  height: 2px;
+  width: 100%;
+  border-radius: 2px;
+  background: #f4f7fa;
+  transition: transform .18s ease, opacity .18s ease;
+}
+
+/* burger → × */
+.nav-toggle.open .nav-burger i:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+.nav-toggle.open .nav-burger i:nth-child(2) { opacity: 0; }
+.nav-toggle.open .nav-burger i:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+/* unread-rivals hint while the drawer is shut and the badge is out of sight */
+.nav-toggle-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff7a2e;
+  border: 1.5px solid #0b1219;
+}
+
+/* Full-bleed catcher so a tap anywhere else dismisses the drawer. Sibling of
+   the header, not a child — see the note in page.js. z-index 19 puts it under
+   the nav (20, which carries the menu) and over everything else. */
+.nav-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+  border: 0;
+  padding: 0;
+  background: rgba(4, 8, 13, .55);
+  cursor: default;
+}
+
+.nav-menu {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% - 4px);
+  right: clamp(16px, 4vw, 40px);
+  left: clamp(16px, 4vw, 40px);
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 14px;
+  background: rgba(9, 15, 22, .98);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, .55);
+  animation: nav-menu-in .16s ease-out;
+}
+
+@keyframes nav-menu-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.nav-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: #e7eef6;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nav-menu button + button {
+  border-top: 1px solid rgba(255, 255, 255, .07);
+}
+
+.nav-menu button:active {
+  background: rgba(255, 255, 255, .09);
+}
+
+@media (max-width: 760px) {
+  .nav-toggle { display: inline-flex; }
 }

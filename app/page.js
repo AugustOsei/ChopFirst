@@ -6,6 +6,7 @@ import RaceGame from "../components/RaceGame";
 import GuideModal from "../components/GuideModal";
 import FeedbackModal from "../components/FeedbackModal";
 import ChangelogModal from "../components/ChangelogModal";
+import AboutModal from "../components/AboutModal";
 import { CURRENT_VERSION } from "../lib/changelog";
 import { logEvent } from "../lib/log-event";
 import { AD_SECONDS, pickAd } from "../lib/ads";
@@ -122,6 +123,28 @@ const TRACK_LIST = listTracks();
 const VEHICLE_LIST = listVehicles();
 // The only circuit Ananse races for now; the arcade track picker locks the rest.
 const ARCADE_TRACK = "akina-ridge";
+// Ananse's pace tiers, in order. Single source for the picker chips, the
+// stored-preference whitelist and the finish-screen "step up" prompt, so a new
+// tier in game/ai-driver.js only has to be listed once here.
+const ANANSE_SKILLS = [
+  ["easy", "Cruising", "He'll keep it friendly."],
+  ["medium", "Race pace", "An honest fight."],
+  ["hard", "Full trickster", "Gold-medal pace. Good luck."],
+  ["legend", "Unleashed", "Sub-1:40. No mercy, no rubber band."],
+];
+const ANANSE_SKILL_IDS = ANANSE_SKILLS.map(([id]) => id);
+const ANANSE_SKILL_LABELS = Object.fromEntries(ANANSE_SKILLS.map(([id, label]) => [id, label]));
+
+// Arcade setup is a numbered wizard: one real decision per step, in the order a
+// player thinks about them. Ananse gets his full hero card on step 1 only — he
+// is the opponent, introduced once, before anything is asked of you. After that
+// he shrinks to a strip so the step's own content is never pushed off the fold.
+const ARCADE_STEPS = [
+  { id: "ride", action: "Choose your ride", cta: "Next — Your driver ›" },
+  { id: "driver", action: "Name your driver", cta: "Next — The race ›" },
+  { id: "race", action: "Set up the race", cta: null }, // last step starts the race
+];
+const ARCADE_STEP_IDS = ARCADE_STEPS.map((s) => s.id);
 // PB is per-track; the key follows whichever track is currently active.
 const pbKey = () => `chopfirst.pb.${TRACK.id}`;
 const DEVICE_KEY = "chopfirst.device";
@@ -171,14 +194,14 @@ const CAR_COLORS = [
 
 export default function Home() {
   const [screen, setScreen] = useState("title");
-  const [arcadeStep, setArcadeStep] = useState("lobby"); // "lobby" | "track"
+  const [arcadeStep, setArcadeStep] = useState("ride"); // see ARCADE_STEPS
   const [ananseLine, setAnanseLine] = useState(null); // current Ananse quip on lobby/track screen
   // Arcade difficulty: how hard Ananse races. Persisted so returning players
   // keep their chosen challenge level.
   const [ananseSkill, setAnanseSkillState] = useState(() => {
     if (typeof window === "undefined") return "medium";
     const stored = localStorage.getItem("chopfirst.ananseSkill");
-    return ["easy", "medium", "hard"].includes(stored) ? stored : "medium";
+    return ANANSE_SKILL_IDS.includes(stored) ? stored : "medium";
   });
   function setAnanseSkill(level) {
     setAnanseSkillState(level);
@@ -206,7 +229,11 @@ export default function Home() {
   const [showGuide, setShowGuide] = useState(false);
   const [showBoard, setShowBoard] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
+  // Opens the feedback form on a specific tab with race context attached — set
+  // by the arcade finish screen's pace check. null = closed.
+  const [feedbackSeed, setFeedbackSeed] = useState(null);
   const [showChangelog, setShowChangelog] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const [changelogSeen, setChangelogSeen] = useState(true);
   const [pb, setPb] = useState(null);
   const [pbRun, setPbRun] = useState(null);
@@ -316,7 +343,7 @@ export default function Home() {
 
   // Arcade mode helpers
   function openArcade() {
-    setArcadeStep("lobby");
+    setArcadeStep("ride");
     // Arcade only runs on Akina Ridge for now — lock it in on entry so the
     // race and the (locked) track picker agree.
     setTrack(ARCADE_TRACK);
@@ -324,21 +351,34 @@ export default function Home() {
     setScreen("arcade");
   }
 
+  // Each step change scrolls back to the top: without it the wizard advances
+  // while the viewport stays deep in the previous step's content.
+  function goToArcadeStep(id, line) {
+    setArcadeStep(id);
+    if (line) setAnanseLine(line);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function arcadeNextStep() {
-    if (arcadeStep === "lobby") {
-      setArcadeStep("track");
-      setTrack(ARCADE_TRACK);
-      setAnanseLine("Akina Ridge it is. Every hairpin is mine. Come and try.");
-    }
+    const index = ARCADE_STEP_IDS.indexOf(arcadeStep);
+    if (index < 0 || index >= ARCADE_STEP_IDS.length - 1) return;
+    const next = ARCADE_STEP_IDS[index + 1];
+    if (next === "race") setTrack(ARCADE_TRACK);
+    goToArcadeStep(
+      next,
+      next === "driver"
+        ? "A name, please. I like to know who I am beating."
+        : "Akina Ridge. Every hairpin is mine. Come and try.",
+    );
   }
 
   function arcadeBack() {
-    if (arcadeStep === "track") {
-      setArcadeStep("lobby");
-      setAnanseLine("Changed your mind? Smart. Take your time.");
-    } else {
+    const index = ARCADE_STEP_IDS.indexOf(arcadeStep);
+    if (index <= 0) {
       setScreen("mode");
+      return;
     }
+    goToArcadeStep(ARCADE_STEP_IDS[index - 1], "Changed your mind? Smart. Take your time.");
   }
 
   function startArcadeRace() {
@@ -562,8 +602,9 @@ export default function Home() {
           onBoard={() => setShowBoard(true)}
           onFeedback={() => setShowFeedback(true)}
           onChangelog={openChangelog}
+          onAbout={() => setShowAbout(true)}
           changelogSeen={changelogSeen}
-          overlayOpen={showGuide || showBoard || showFeedback || showChangelog}
+          overlayOpen={showGuide || showBoard || showFeedback || !!feedbackSeed || showChangelog || showAbout}
         />
       ) : (
       <main className="app-shell">
@@ -654,175 +695,213 @@ export default function Home() {
           const curVeh = driver.vehicle || DEFAULT_VEHICLE;
           const stats = vehicleStats(curVeh);
           const curTrack = TRACK_LIST.find((t) => t.id === selectedTrack) || TRACK_LIST[0];
+          const stepIndex = Math.max(0, ARCADE_STEP_IDS.indexOf(arcadeStep));
+          const step = ARCADE_STEPS[stepIndex];
+          const isFirstStep = stepIndex === 0;
           return (
             <div className="garage-screen arcade-lobby-screen">
               <div className="garage-inner">
                 <header className="garage-head">
                   <div>
-                    <p className="eyebrow">Arcade · vs Ananse the AI</p>
-                    <h2 className="setup-title">{arcadeStep === "lobby" ? "Choose your ride" : "Choose the circuit"}</h2>
+                    <p className="eyebrow">Arcade</p>
+                    <h2 className="setup-title">Race Ananse</h2>
                   </div>
                   <button className="ghost-button garage-back" onClick={arcadeBack}>‹ Back</button>
                 </header>
 
-                <div className="arcade-split">
-                  {/* ---- Left: your opponent ---- */}
-                  <aside className="arcade-ananse-side">
-                    <p className="arcade-side-label">Your opponent</p>
-                    <div className="ananse-hero-wrap">
-                      <AnanseFace variant="hero" />
-                      <div className="ananse-hero-plate">
-                        <span className="ananse-name">Ananse</span>
-                        <span className="ananse-sub">The trickster AI · purple &amp; gold coupe</span>
+                {/* ---- Who you're up against. Full hero on step 1 so he is
+                    introduced properly; a compact strip afterwards so he keeps
+                    reacting to your choices without burying them. ---- */}
+                <section className={`arcade-opponent${isFirstStep ? "" : " compact"}`}>
+                  <p className="arcade-side-label">Your opponent</p>
+                  {isFirstStep ? (
+                    <>
+                      <div className="ananse-hero-wrap">
+                        <AnanseFace variant="hero" />
+                        <div className="ananse-hero-plate">
+                          <span className="ananse-name">Ananse</span>
+                          <span className="ananse-sub">The trickster AI · purple &amp; gold coupe</span>
+                        </div>
+                      </div>
+                      <div className="ananse-speech-bubble ananse-lobby-bubble">
+                        <span>{ananseLine || "So you think you can beat me? Pick your car. I'll wait."}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="ananse-strip">
+                      <AnanseFace variant="portrait" size="small" />
+                      <div className="ananse-strip-text">
+                        <b>Ananse</b>
+                        <span>{ananseLine || "Still here. Still waiting."}</span>
                       </div>
                     </div>
-                    <div className="ananse-speech-bubble ananse-lobby-bubble">
-                      <span>{ananseLine || "So you think you can beat me? Pick your car. I'll wait."}</span>
-                    </div>
-                  </aside>
+                  )}
+                </section>
 
-                  {/* ---- Right: your setup ---- */}
-                  <div className="arcade-player-side">
-                    <p className="arcade-side-label">
-                      {arcadeStep === "lobby" ? "Your car & name" : "Your circuit"}
+                {/* ---- What this step actually asks of you ---- */}
+                <section className="arcade-step">
+                  <div className="arcade-step-head">
+                    <p className="arcade-step-count">
+                      Step {stepIndex + 1} of {ARCADE_STEPS.length}
+                      <span className="arcade-step-dots" aria-hidden="true">
+                        {ARCADE_STEPS.map((s, i) => (
+                          <i key={s.id} className={i === stepIndex ? "on" : i < stepIndex ? "done" : ""} />
+                        ))}
+                      </span>
                     </p>
-                    {arcadeStep === "lobby" ? (
-                      <>
-                        <div className="garage hero-sm">
-                          <div className="garage-hero garage-hero-sm">
-                            <GaragePreview vehicle={curVeh} paint={driver.color} />
-                          </div>
-                          <div className="garage-stats">
-                            <span className="veh-class">{stats.klass}</span>
-                            <h3>{stats.name}</h3>
-                            <div className="spec-bars">
-                              {SPEC_ROWS.map(([k, label]) => (
-                                <div className="spec-row" key={k}>
-                                  <span>{label}</span>
-                                  <div className="spec-track"><div className="spec-fill" style={{ width: `${stats.bars[k]}%` }} /></div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
+                    <h3 className="arcade-step-title">{step.action}</h3>
+                  </div>
+
+                  {arcadeStep === "ride" && (
+                    <>
+                      <div className="garage hero-sm">
+                        <div className="garage-hero garage-hero-sm">
+                          <GaragePreview vehicle={curVeh} paint={driver.color} />
                         </div>
-                        <div className="car-cards">
-                          {VEHICLE_LIST.map((v) => {
-                            const vs = vehicleStats(v.id);
-                            return (
-                              <button
-                                key={v.id}
-                                type="button"
-                                className={`car-card${curVeh === v.id ? " selected" : ""}`}
-                                onClick={() => {
-                                  setDriver({ ...driver, vehicle: v.id });
-                                  setAnanseLine(
-                                    v.id === "hoverbike" ? "Ooh, the hover bike? Bold choice. Doesn't mean you'll beat me." :
-                                    v.id === "trotro"    ? "A trotro?! Ha! This will be entertaining." :
-                                    v.id === "taxi"      ? "The taxi, eh? At least it has… character." :
-                                    "Solid choice. Mine is better."
-                                  );
-                                }}
-                              >
-                                <span className="cc-name">{v.name}</span>
-                                <span className="cc-class">{v.klass}</span>
-                                <div className="cc-bar"><div style={{ width: `${vs.bars.speed}%` }} /></div>
-                                <span className="cc-top">{vs.topSpeedKmh} km/h</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {curVeh === "street" && (
-                          <div className="paint-row">
-                            <span className="section-label">Paint</span>
-                            <div className="swatch-row">
-                              {CAR_COLORS.map((color) => (
-                                <button
-                                  key={color.id}
-                                  type="button"
-                                  title={color.label}
-                                  aria-label={`Paint: ${color.label}`}
-                                  className={`swatch${driver.color === color.id ? " selected" : ""}`}
-                                  style={{ background: color.id }}
-                                  onClick={() => setDriver({ ...driver, color: color.id })}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        <div className="identity-card" style={{ marginTop: 12 }}>
-                          <label className="field name-field">
-                            Your racing name
-                            <input value={driver.name} onChange={(e) => setDriver({ ...driver, name: e.target.value })} placeholder="Enter your name" />
-                          </label>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="arcade-skill-row">
-                          <span className="section-label">Ananse&apos;s pace</span>
-                          <div className="mode-row">
-                            {[
-                              ["easy", "Cruising", "He'll keep it friendly."],
-                              ["medium", "Race pace", "An honest fight."],
-                              ["hard", "Full trickster", "Gold-medal pace. Good luck."],
-                            ].map(([id, label]) => (
-                              <button
-                                key={id}
-                                type="button"
-                                className={`mode-chip${ananseSkill === id ? " selected" : ""}`}
-                                onClick={() => {
-                                  setAnanseSkill(id);
-                                  setAnanseLine(
-                                    id === "easy" ? "Cruising? Fine. I'll drive with one hand." :
-                                    id === "hard" ? "Full trickster?! Chale… remember, you asked for this." :
-                                    "Race pace. Now we're talking."
-                                  );
-                                }}
-                              >
-                                {label}
-                              </button>
+                        <div className="garage-stats">
+                          <span className="veh-class">{stats.klass}</span>
+                          <h3>{stats.name}</h3>
+                          <div className="spec-bars">
+                            {SPEC_ROWS.map(([k, label]) => (
+                              <div className="spec-row" key={k}>
+                                <span>{label}</span>
+                                <div className="spec-track"><div className="spec-fill" style={{ width: `${stats.bars[k]}%` }} /></div>
+                              </div>
                             ))}
                           </div>
-                          <p className="arcade-skill-hint">
-                            {ananseSkill === "easy" && "Relaxed pace — he hangs back and rarely boosts. Good for learning the ridge."}
-                            {ananseSkill === "medium" && "He races your pace and keeps it close. Beatable, never free."}
-                            {ananseSkill === "hard" && "No mercy, late braking, boosts on sight. Bring your best laps."}
-                          </p>
                         </div>
-                        <p className="arcade-track-note">
-                          Ananse only races Akina Ridge for now — the other circuits are coming soon.
-                        </p>
-                        <div className="track-cards">
-                          {TRACK_LIST.map((t) => {
-                            // Arcade launches only on Akina Ridge for now; the rest
-                            // are shown locked so players see what's coming.
-                            const locked = t.id !== ARCADE_TRACK;
-                            return (
-                              <TrackCard
-                                key={t.id}
-                                track={t}
-                                locked={locked}
-                                selected={selectedTrack === t.id}
-                                onSelect={() => {
-                                  setTrack(t.id);
-                                  setAnanseLine("Akina Ridge. Every hairpin is mine. Come and try.");
-                                }}
+                      </div>
+                      <div className="car-cards">
+                        {VEHICLE_LIST.map((v) => {
+                          const vs = vehicleStats(v.id);
+                          return (
+                            <button
+                              key={v.id}
+                              type="button"
+                              className={`car-card${curVeh === v.id ? " selected" : ""}`}
+                              onClick={() => {
+                                setDriver({ ...driver, vehicle: v.id });
+                                setAnanseLine(
+                                  v.id === "hoverbike" ? "Ooh, the hover bike? Bold choice. Doesn't mean you'll beat me." :
+                                  v.id === "trotro"    ? "A trotro?! Ha! This will be entertaining." :
+                                  v.id === "taxi"      ? "The taxi, eh? At least it has… character." :
+                                  "Solid choice. Mine is better."
+                                );
+                              }}
+                            >
+                              <span className="cc-name">{v.name}</span>
+                              <span className="cc-class">{v.klass}</span>
+                              <div className="cc-bar"><div style={{ width: `${vs.bars.speed}%` }} /></div>
+                              <span className="cc-top">{vs.topSpeedKmh} km/h</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {curVeh === "street" && (
+                        <div className="paint-row">
+                          <span className="section-label">Paint</span>
+                          <div className="swatch-row">
+                            {CAR_COLORS.map((color) => (
+                              <button
+                                key={color.id}
+                                type="button"
+                                title={color.label}
+                                aria-label={`Paint: ${color.label}`}
+                                className={`swatch${driver.color === color.id ? " selected" : ""}`}
+                                style={{ background: color.id }}
+                                onClick={() => setDriver({ ...driver, color: color.id })}
                               />
-                            );
-                          })}
+                            ))}
+                          </div>
                         </div>
-                      </>
-                    )}
-                  </div>
-                </div>
+                      )}
+                    </>
+                  )}
+
+                  {arcadeStep === "driver" && (
+                    <div className="identity-card">
+                      <label className="field name-field">
+                        Your racing name
+                        <input
+                          value={driver.name}
+                          onChange={(e) => setDriver({ ...driver, name: e.target.value })}
+                          placeholder="Enter your name"
+                          maxLength={32}
+                        />
+                      </label>
+                      <p className="arcade-step-hint">
+                        This is the name on the leaderboard and the one Ananse taunts. Leave it blank and you race as
+                        &ldquo;Street Driver&rdquo;.
+                      </p>
+                    </div>
+                  )}
+
+                  {arcadeStep === "race" && (
+                    <>
+                      <div className="arcade-skill-row">
+                        <span className="section-label">Ananse&apos;s pace</span>
+                        <div className="mode-row">
+                          {ANANSE_SKILLS.map(([id, label]) => (
+                            <button
+                              key={id}
+                              type="button"
+                              className={`mode-chip${ananseSkill === id ? " selected" : ""}`}
+                              onClick={() => {
+                                setAnanseSkill(id);
+                                setAnanseLine(
+                                  id === "easy" ? "Cruising? Fine. I'll drive with one hand." :
+                                  id === "hard" ? "Full trickster?! Chale… remember, you asked for this." :
+                                  id === "legend" ? "Unleashed. No more games. I will not wait for you." :
+                                  "Race pace. Now we're talking."
+                                );
+                              }}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="arcade-skill-hint">
+                          {ananseSkill === "easy" && "Relaxed pace — he hangs back and rarely boosts. Good for learning the ridge."}
+                          {ananseSkill === "medium" && "He races your pace and keeps it close. Beatable, never free."}
+                          {ananseSkill === "hard" && "No mercy, late braking, boosts on sight. Bring your best laps."}
+                          {ananseSkill === "legend" && "He stops racing you and races the clock — roughly 1:40 for three laps, flat out, every boost spent."}
+                        </p>
+                      </div>
+
+                      <span className="section-label">Circuit</span>
+                      <p className="arcade-track-note">
+                        Ananse only races Akina Ridge for now — the other circuits are coming soon.
+                      </p>
+                      <div className="track-cards">
+                        {TRACK_LIST.map((t) => {
+                          // Arcade launches only on Akina Ridge for now; the rest
+                          // are shown locked so players see what's coming.
+                          const locked = t.id !== ARCADE_TRACK;
+                          return (
+                            <TrackCard
+                              key={t.id}
+                              track={t}
+                              locked={locked}
+                              selected={selectedTrack === t.id}
+                              onSelect={() => {
+                                setTrack(t.id);
+                                setAnanseLine("Akina Ridge. Every hairpin is mine. Come and try.");
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </section>
 
                 <div className="start-bar">
-                  {arcadeStep === "lobby" ? (
-                    <button className="primary start-cta" onClick={arcadeNextStep}>Next — Choose circuit ›</button>
+                  {step.cta ? (
+                    <button className="primary start-cta" onClick={arcadeNextStep}>{step.cta}</button>
                   ) : (
                     <>
                       <div className="start-summary">
-                        <b>{stats.name}</b><i>·</i><b>{curTrack?.name}</b><i>·</i><b>vs Ananse</b>
+                        <b>{stats.name}</b><i>·</i><b>{curTrack?.name}</b><i>·</i><b>{ANANSE_SKILL_LABELS[ananseSkill]}</b>
                       </div>
                       <button className="primary start-cta arcade-start-cta" onClick={startArcadeRace}>
                         Race Ananse — {curTrack?.laps || TRACK.laps} laps
@@ -989,6 +1068,15 @@ export default function Home() {
 
         {screen === "finish" && result && arcadeMode && (() => {
           const won = !result.ananse?.won;
+          // How comfortable was it? behindMeters is how far short of the line
+          // Ananse was when the player crossed — a big number means the race
+          // was never a race, which is exactly the case we want reported.
+          const margin = result.ananse?.behindMeters || 0;
+          const comfortable = won && margin > 120;
+          const skillIndex = ANANSE_SKILL_IDS.indexOf(ananseSkill);
+          const canStepUp = skillIndex >= 0 && skillIndex < ANANSE_SKILL_IDS.length - 1;
+          const nextSkill = canStepUp ? ANANSE_SKILL_IDS[skillIndex + 1] : ananseSkill;
+          const paceContext = `${ANANSE_SKILL_LABELS[ananseSkill]} · ${TRACK.name} · player ${formatTime(result.timeMs)} · ${won ? `won by ${margin} m` : "lost"}`;
           return (
           <Panel>
             <p className="eyebrow">Arcade — vs Ananse</p>
@@ -1005,6 +1093,34 @@ export default function Home() {
               <span>Drift <b>{result.driftScore}</b></span>
               <span>Boosts used <b>{result.boostUses}</b></span>
             </div>
+            {/* Pace check. Only after a win — losing to him is not a complaint
+                we need to chase. The wording asks the actual question rather
+                than hiding it behind a generic "feedback" link, and offers the
+                immediate fix (a harder tier) next to the slower one (tell us). */}
+            {won && (
+              <div className="pace-check">
+                <b>{comfortable ? "That looked easy. Was Ananse too slow?" : "Beat him. Was that a real fight?"}</b>
+                <p>
+                  You won by {margin} m on <em>{ANANSE_SKILL_LABELS[ananseSkill]}</em>.{" "}
+                  {canStepUp
+                    ? `If he never troubled you, step him up to ${ANANSE_SKILL_LABELS[nextSkill]} — or tell us he needs to be quicker and we'll tune him.`
+                    : "That's his fastest setting. If you're still beating him comfortably, tell us — we'll make him quicker."}
+                </p>
+                <div className="pace-check-actions">
+                  {canStepUp && (
+                    <button
+                      className="pace-step-up"
+                      onClick={() => { setAnanseSkill(nextSkill); logEvent("arcade_skill_stepped_up"); startArcadeRace(); }}
+                    >
+                      ⚡ Race him on {ANANSE_SKILL_LABELS[nextSkill]}
+                    </button>
+                  )}
+                  <button className="pace-report" onClick={() => setFeedbackSeed({ type: "pace", context: paceContext })}>
+                    🏁 Tell us he&apos;s too slow
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="finish-nav">
               <button className="finish-nav-link" onClick={startArcadeRace}>↻ Rematch</button>
               <button className="finish-nav-link muted" onClick={() => { setArcadeMode(false); setScreen("title"); }}>⌂ Home</button>
@@ -1141,8 +1257,16 @@ export default function Home() {
 
       {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
       {showBoard && <GlobalBoard onClose={() => setShowBoard(false)} />}
-      {showFeedback && <FeedbackModal driverName={driver.name} onClose={() => setShowFeedback(false)} />}
+      {(showFeedback || feedbackSeed) && (
+        <FeedbackModal
+          driverName={driver.name}
+          initialType={feedbackSeed?.type || "bug"}
+          context={feedbackSeed?.context || ""}
+          onClose={() => { setShowFeedback(false); setFeedbackSeed(null); }}
+        />
+      )}
       {showChangelog && <ChangelogModal onClose={() => setShowChangelog(false)} />}
+      {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}
     </>
   );
 }
@@ -1452,7 +1576,10 @@ function FeatureRow({ flip, eyebrow, title, body, media, foot }) {
   return (
     <div ref={ref} className={`feature-row${flip ? " flip" : ""}${shown ? " in" : ""}`}>
       <div className="feature-copy">
-        <p className="feature-eyebrow">{eyebrow}</p>
+        {/* h2, not a <p>: the page ran h1 → seven h3s with nothing in between,
+            so the section each h3 belongs to had no heading of its own. Styling
+            is unchanged — .feature-eyebrow still does all the visual work. */}
+        <h2 className="feature-eyebrow">{eyebrow}</h2>
         <h3 className="feature-title">{title}</h3>
         <p className="feature-body">{body}</p>
         {foot}
@@ -1462,9 +1589,12 @@ function FeatureRow({ flip, eyebrow, title, body, media, foot }) {
   );
 }
 
-function LandingPage({ challenge, onStart, onArcade, onGuide, onBoard, onFeedback, onChangelog, changelogSeen, overlayOpen }) {
+function LandingPage({ challenge, onStart, onArcade, onGuide, onBoard, onFeedback, onChangelog, onAbout, changelogSeen, overlayOpen }) {
   const [bestTime, setBestTime] = useState(null);
   const [showRivals, setShowRivals] = useState(false);
+  // Below 760px the nav links are hidden — this drives the drawer that replaces
+  // them. Without it a phone has no top-nav route to anything but Play.
+  const [menuOpen, setMenuOpen] = useState(false);
   const { items: rivals, pendingCount } = useRivals();
   useEffect(() => {
     try {
@@ -1476,12 +1606,29 @@ function LandingPage({ challenge, onStart, onArcade, onGuide, onBoard, onFeedbac
   }, []);
   useEffect(() => {
     const onKey = (event) => {
-      if (overlayOpen) return;
+      if (event.key === "Escape" && menuOpen) {
+        setMenuOpen(false);
+        return;
+      }
+      if (overlayOpen || menuOpen) return;
       if (event.key === "Enter") onStart();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onStart, overlayOpen]);
+  }, [onStart, overlayOpen, menuOpen]);
+  // Widening past the breakpoint brings the inline links back; a drawer left
+  // open behind them would sit there orphaned.
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onResize = () => { if (window.innerWidth > 760) setMenuOpen(false); };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [menuOpen]);
+
+  // Every drawer item closes the drawer first, then acts.
+  function menuAction(fn) {
+    return () => { setMenuOpen(false); fn(); };
+  }
 
   return (
     <div className="landing">
@@ -1493,9 +1640,49 @@ function LandingPage({ challenge, onStart, onArcade, onGuide, onBoard, onFeedbac
           </button>
           <button onClick={onBoard}>Leaderboard</button>
           <button onClick={onGuide}>How to play</button>
+          <button onClick={onAbout}>About</button>
           <button className="nav-cta" onClick={onStart}>Play</button>
+          {/* Phone-only. The inline links above are display:none under 760px,
+              so this is the entire top-nav on a phone. */}
+          <button
+            type="button"
+            className={`nav-toggle${menuOpen ? " open" : ""}`}
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+            aria-controls="landing-nav-menu"
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <span className="nav-burger" aria-hidden="true"><i /><i /><i /></span>
+            {pendingCount > 0 && !menuOpen && <span className="nav-toggle-dot" aria-hidden="true" />}
+          </button>
         </div>
+
+        {menuOpen && (
+          <nav className="nav-menu" id="landing-nav-menu">
+            <button onClick={menuAction(() => setShowRivals(true))}>
+              <span>⚔️ Your rivals</span>
+              {pendingCount > 0 && <span className="rivals-badge">{pendingCount}</span>}
+            </button>
+            <button onClick={menuAction(onBoard)}><span>🏆 Global leaderboard</span></button>
+            <button onClick={menuAction(onGuide)}><span>🎮 How to play</span></button>
+            <button onClick={menuAction(onAbout)}><span>👋 About</span></button>
+            <button onClick={menuAction(onFeedback)}><span>💬 Feedback</span></button>
+          </nav>
+        )}
       </header>
+
+      {/* Outside the header on purpose: .landing-nav has a backdrop-filter,
+          which makes it the containing block for position:fixed descendants —
+          a scrim nested inside it only ever covered the nav bar itself. */}
+      {menuOpen && (
+        <button
+          type="button"
+          className="nav-scrim"
+          aria-label="Close menu"
+          tabIndex={-1}
+          onClick={() => setMenuOpen(false)}
+        />
+      )}
 
       {/* hero */}
       <section className="hero">
@@ -1513,24 +1700,32 @@ function LandingPage({ challenge, onStart, onArcade, onGuide, onBoard, onFeedbac
               switches to the stacked portrait art much earlier than Orbital
               does. Anything narrower than about 16:9 crops both of them off,
               which loses the entire point of the shot. */}
+          {/* Arcade is the lead slide (fade slot A) and therefore the hero's
+              LCP candidate — tell the browser so, and let the other three load
+              at default priority behind it. It is also last in DOM order, so
+              the very first painted frame (before the CSS animations bind)
+              already shows it rather than flashing another circuit. */}
           <picture>
             <source media="(max-width: 1080px)" srcSet="/cover-arcade-mobile.jpg" />
-            <img src="/cover-arcade.jpg" alt="" className="hero-art is-arcade" />
+            <img src="/cover-arcade.jpg" alt="" className="hero-art is-arcade" fetchPriority="high" />
           </picture>
         </div>
         <div className="hero-scrim" />
         <div className="hero-inner">
-          <h1 className="sr-only">
-            CHOP FIRST — a free, vibecoded browser car racing game set on a mountain touge, the streets of Accra, Ghana, and a neon orbital highway in space. Race 24-hour time attacks against your friends, or take on Ananse, a trash-talking AI rival, in Arcade mode.
-          </h1>
-          <p className="eyebrow title-fade" style={{ animationDelay: ".15s" }}>24-hour time attack · arcade vs Ananse the AI</p>
-          <div className="brand-logo hero-logo" aria-label="CHOP FIRST">
-            <span className="brand-chop logo-pop">CHOP</span>
+          {/* The wordmark IS the h1. It used to be a div with an aria-label
+              while the real h1 was a 55-word sr-only keyword block — which
+              search engines discount, and which left the page with no visible
+              top-level heading at all. Same keywords, said out loud. */}
+          {/* The {" "} matters: without it the heading's text is "CHOPFIRST" to
+              crawlers and screen readers. Whitespace-only text between grid
+              items generates no box, so the stacked layout is unaffected. */}
+          <h1 className="brand-logo hero-logo">
+            <span className="brand-chop logo-pop">CHOP</span>{" "}
             <span className="brand-first logo-pop" style={{ animationDelay: ".12s" }}>FIRST</span>
-          </div>
+          </h1>
           <div className="brand-strip hero-strip" aria-hidden />
           <p className="hero-tagline title-fade" style={{ animationDelay: ".5s" }}>
-            Two ways to race. Set a blistering time on the mountain, through Accra or out among the nebulas, then give your friends 24 hours to chop it — or go bumper-to-bumper with Ananse, a trickster AI who brakes late and talks the whole way.
+            Free browser car racing. Drift a mountain touge, street-race Accra, or fly a neon highway in orbit.
           </p>
           {challenge ? (
             <p className="challenge-pill hero-pill title-fade" style={{ animationDelay: ".65s" }}>
@@ -1683,6 +1878,7 @@ function LandingPage({ challenge, onStart, onArcade, onGuide, onBoard, onFeedbac
           </button>
           <button onClick={onBoard}>🏆 Global leaderboard</button>
           <button onClick={onFeedback}>💬 Feedback</button>
+          <button onClick={onAbout}>👋 About</button>
         </div>
       </section>
 
