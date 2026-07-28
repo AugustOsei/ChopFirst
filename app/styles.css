@@ -4079,6 +4079,47 @@ kbd {
   margin-top: 3px;
 }
 
+/* ---- Ananse's speech bubble ----
+   .ananse-speech-bubble is the shared skin; .ananse-lobby-bubble below is the
+   setup-screen modifier and RaceGame's .ananse-hud-bubble is the in-race one.
+   The base must stay ABOVE the lobby rule: both set background, border, radius
+   and padding at the same specificity, so whichever comes last wins, and the
+   modifier is the one that should. */
+.ananse-speech-bubble {
+  background: rgba(10, 6, 0, .88);
+  border: 1.5px solid #d4a017;
+  border-radius: 4px 12px 12px 12px;
+  padding: 10px 14px;
+  max-width: 240px;
+  font-size: 13px;
+  color: #f4ead0;
+  font-style: italic;
+  line-height: 1.45;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, .5);
+}
+
+/* In-race, the bubble sits upper-left, just above the vertical middle: the
+   racing sightline runs from the car (bottom-centre) up the road to the
+   horizon, and apexes appear low-left/low-right — this height is empty scenery,
+   clear of the stats bar (top-centre), minimap (top-right), speedo and boost
+   (bottom corners), and the mobile thumb zone. */
+.ananse-hud-bubble {
+  position: fixed;
+  top: 32%;
+  left: 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  z-index: 60;
+  pointer-events: none;
+  animation: bubble-in .3s ease;
+}
+
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(-8px) scale(.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 /* Speech bubble in the lobby — tail pointing up-left */
 .ananse-lobby-bubble {
   background: rgba(20, 10, 0, .78);
