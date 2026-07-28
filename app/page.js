@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import RaceGame from "../components/RaceGame";
+import ArcadeSetup from "../components/ArcadeSetup";
 import GuideModal from "../components/GuideModal";
 import FeedbackModal from "../components/FeedbackModal";
 import ChangelogModal from "../components/ChangelogModal";
@@ -15,6 +16,7 @@ import { TRACK, listTracks, setActiveTrack } from "../game/track";
 import { listVehicles, vehicleStats, DEFAULT_VEHICLE } from "../game/vehicle";
 import AnanseFace from "../components/AnanseFace";
 import { getAnanseFinishLine } from "../game/ai-driver";
+import { CAR_COLORS, SPEC_ROWS, ANANSE_SKILL_IDS, ANANSE_SKILL_LABELS } from "../lib/garage";
 
 // Live 3D garage preview is client-only (R3F Canvas can't server-render).
 const GaragePreview = dynamic(() => import("../components/GaragePreview"), { ssr: false });
@@ -23,12 +25,6 @@ const GaragePreview = dynamic(() => import("../components/GaragePreview"), { ssr
 // id. If they differ, this tab is running pre-deploy code and should refresh.
 const CLIENT_BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID || "dev";
 
-const SPEC_ROWS = [
-  ["speed", "Top Speed"],
-  ["accel", "Acceleration"],
-  ["grip", "Grip"],
-  ["agility", "Agility"],
-];
 const TOD_OPTIONS = [
   ["day", "Day", "☀", "/feature-day.webp"],
   ["dusk", "Dusk", "🌅", "/feature-dusk.webp"],
@@ -122,30 +118,9 @@ function compressPhoto(file) {
 
 const TRACK_LIST = listTracks();
 const VEHICLE_LIST = listVehicles();
-// The only circuit Ananse races for now; the arcade track picker locks the rest.
+// The only circuit Ananse races for now. Arcade setup no longer shows a track
+// picker at all — three locked cards were noise around the one live choice.
 const ARCADE_TRACK = "akina-ridge";
-// Ananse's pace tiers, in order. Single source for the picker chips, the
-// stored-preference whitelist and the finish-screen "step up" prompt, so a new
-// tier in game/ai-driver.js only has to be listed once here.
-const ANANSE_SKILLS = [
-  ["easy", "Cruising", "He'll keep it friendly."],
-  ["medium", "Race pace", "An honest fight."],
-  ["hard", "Full trickster", "Gold-medal pace. Good luck."],
-  ["legend", "Unleashed", "Sub-1:40. No mercy, no rubber band."],
-];
-const ANANSE_SKILL_IDS = ANANSE_SKILLS.map(([id]) => id);
-const ANANSE_SKILL_LABELS = Object.fromEntries(ANANSE_SKILLS.map(([id, label]) => [id, label]));
-
-// Arcade setup is a numbered wizard: one real decision per step, in the order a
-// player thinks about them. Ananse gets his full hero card on step 1 only — he
-// is the opponent, introduced once, before anything is asked of you. After that
-// he shrinks to a strip so the step's own content is never pushed off the fold.
-const ARCADE_STEPS = [
-  { id: "ride", action: "Choose your ride", cta: "Next — Your driver ›" },
-  { id: "driver", action: "Name your driver", cta: "Next — The race ›" },
-  { id: "race", action: "Set up the race", cta: null }, // last step starts the race
-];
-const ARCADE_STEP_IDS = ARCADE_STEPS.map((s) => s.id);
 // PB is per-track; the key follows whichever track is currently active.
 const pbKey = () => `chopfirst.pb.${TRACK.id}`;
 const DEVICE_KEY = "chopfirst.device";
@@ -184,19 +159,8 @@ function upsertTracked(entry) {
   saveTracked(list);
 }
 
-const CAR_COLORS = [
-  { id: "#d81f33", label: "Rosso" },
-  { id: "#2563eb", label: "Bayside Blue" },
-  { id: "#f5b818", label: "Sunburst" },
-  { id: "#1f9d55", label: "Ridge Green" },
-  { id: "#374151", label: "Midnight" },
-  { id: "#e8ecef", label: "Chalk" },
-];
-
 export default function Home() {
   const [screen, setScreen] = useState("title");
-  const [arcadeStep, setArcadeStep] = useState("ride"); // see ARCADE_STEPS
-  const [ananseLine, setAnanseLine] = useState(null); // current Ananse quip on lobby/track screen
   // Arcade difficulty: how hard Ananse races. Persisted so returning players
   // keep their chosen challenge level.
   const [ananseSkill, setAnanseSkillState] = useState(() => {
@@ -353,44 +317,12 @@ export default function Home() {
     setDriver((value) => ({ ...value, photo }));
   }
 
-  // Arcade mode helpers
+  // Arcade mode helpers. The setup flow itself lives in ArcadeSetup — it owns
+  // its own step/gating state, so all this screen has to do is lock the track
+  // in on entry and hand it the driver + pace state it edits.
   function openArcade() {
-    setArcadeStep("ride");
-    // Arcade only runs on Akina Ridge for now — lock it in on entry so the
-    // race and the (locked) track picker agree.
     setTrack(ARCADE_TRACK);
-    setAnanseLine("I have been waiting. Are you ready… or just browsing?");
     setScreen("arcade");
-  }
-
-  // Each step change scrolls back to the top: without it the wizard advances
-  // while the viewport stays deep in the previous step's content.
-  function goToArcadeStep(id, line) {
-    setArcadeStep(id);
-    if (line) setAnanseLine(line);
-    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  function arcadeNextStep() {
-    const index = ARCADE_STEP_IDS.indexOf(arcadeStep);
-    if (index < 0 || index >= ARCADE_STEP_IDS.length - 1) return;
-    const next = ARCADE_STEP_IDS[index + 1];
-    if (next === "race") setTrack(ARCADE_TRACK);
-    goToArcadeStep(
-      next,
-      next === "driver"
-        ? "A name, please. I like to know who I am beating."
-        : "Akina Ridge. Every hairpin is mine. Come and try.",
-    );
-  }
-
-  function arcadeBack() {
-    const index = ARCADE_STEP_IDS.indexOf(arcadeStep);
-    if (index <= 0) {
-      setScreen("mode");
-      return;
-    }
-    goToArcadeStep(ARCADE_STEP_IDS[index - 1], "Changed your mind? Smart. Take your time.");
   }
 
   function startArcadeRace() {
@@ -719,228 +651,17 @@ export default function Home() {
           </div>
         )}
 
-        {screen === "arcade" && (() => {
-          const curVeh = driver.vehicle || DEFAULT_VEHICLE;
-          const stats = vehicleStats(curVeh);
-          const curTrack = TRACK_LIST.find((t) => t.id === selectedTrack) || TRACK_LIST[0];
-          const stepIndex = Math.max(0, ARCADE_STEP_IDS.indexOf(arcadeStep));
-          const step = ARCADE_STEPS[stepIndex];
-          const isFirstStep = stepIndex === 0;
-          return (
-            <div className="garage-screen arcade-lobby-screen">
-              <div className="garage-inner">
-                <header className="garage-head">
-                  <div>
-                    <p className="eyebrow">Arcade</p>
-                    <h2 className="setup-title">Race Ananse</h2>
-                  </div>
-                  <button className="ghost-button garage-back" onClick={arcadeBack}>‹ Back</button>
-                </header>
-
-                {/* ---- Who you're up against. Full hero on step 1 so he is
-                    introduced properly; a compact strip afterwards so he keeps
-                    reacting to your choices without burying them. ---- */}
-                <section className={`arcade-opponent${isFirstStep ? "" : " compact"}`}>
-                  <p className="arcade-side-label">Your opponent</p>
-                  {isFirstStep ? (
-                    <>
-                      <div className="ananse-hero-wrap">
-                        <AnanseFace variant="hero" />
-                        <div className="ananse-hero-plate">
-                          <span className="ananse-name">Ananse</span>
-                          <span className="ananse-sub">The trickster AI · purple &amp; gold coupe</span>
-                        </div>
-                      </div>
-                      <div className="ananse-speech-bubble ananse-lobby-bubble">
-                        <span>{ananseLine || "So you think you can beat me? Pick your car. I'll wait."}</span>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="ananse-strip">
-                      <AnanseFace variant="portrait" size="small" />
-                      <div className="ananse-strip-text">
-                        <b>Ananse</b>
-                        <span>{ananseLine || "Still here. Still waiting."}</span>
-                      </div>
-                    </div>
-                  )}
-                </section>
-
-                {/* ---- What this step actually asks of you ---- */}
-                <section className="arcade-step">
-                  <div className="arcade-step-head">
-                    <p className="arcade-step-count">
-                      Step {stepIndex + 1} of {ARCADE_STEPS.length}
-                      <span className="arcade-step-dots" aria-hidden="true">
-                        {ARCADE_STEPS.map((s, i) => (
-                          <i key={s.id} className={i === stepIndex ? "on" : i < stepIndex ? "done" : ""} />
-                        ))}
-                      </span>
-                    </p>
-                    <h3 className="arcade-step-title">{step.action}</h3>
-                  </div>
-
-                  {arcadeStep === "ride" && (
-                    <>
-                      <div className="garage hero-sm">
-                        <div className="garage-hero garage-hero-sm">
-                          <GaragePreview vehicle={curVeh} paint={driver.color} />
-                        </div>
-                        <div className="garage-stats">
-                          <span className="veh-class">{stats.klass}</span>
-                          <h3>{stats.name}</h3>
-                          <div className="spec-bars">
-                            {SPEC_ROWS.map(([k, label]) => (
-                              <div className="spec-row" key={k}>
-                                <span>{label}</span>
-                                <div className="spec-track"><div className="spec-fill" style={{ width: `${stats.bars[k]}%` }} /></div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="car-cards">
-                        {VEHICLE_LIST.map((v) => {
-                          const vs = vehicleStats(v.id);
-                          return (
-                            <button
-                              key={v.id}
-                              type="button"
-                              className={`car-card${curVeh === v.id ? " selected" : ""}`}
-                              onClick={() => {
-                                setDriver({ ...driver, vehicle: v.id });
-                                setAnanseLine(
-                                  v.id === "hoverbike" ? "Ooh, the hover bike? Bold choice. Doesn't mean you'll beat me." :
-                                  v.id === "trotro"    ? "A trotro?! Ha! This will be entertaining." :
-                                  v.id === "taxi"      ? "The taxi, eh? At least it has… character." :
-                                  "Solid choice. Mine is better."
-                                );
-                              }}
-                            >
-                              <span className="cc-name">{v.name}</span>
-                              <span className="cc-class">{v.klass}</span>
-                              <div className="cc-bar"><div style={{ width: `${vs.bars.speed}%` }} /></div>
-                              <span className="cc-top">{vs.topSpeedKmh} km/h</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {curVeh === "street" && (
-                        <div className="paint-row">
-                          <span className="section-label">Paint</span>
-                          <div className="swatch-row">
-                            {CAR_COLORS.map((color) => (
-                              <button
-                                key={color.id}
-                                type="button"
-                                title={color.label}
-                                aria-label={`Paint: ${color.label}`}
-                                className={`swatch${driver.color === color.id ? " selected" : ""}`}
-                                style={{ background: color.id }}
-                                onClick={() => setDriver({ ...driver, color: color.id })}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  {arcadeStep === "driver" && (
-                    <div className="identity-card">
-                      <label className="field name-field">
-                        Your racing name
-                        <input
-                          value={driver.name}
-                          onChange={(e) => setDriver({ ...driver, name: e.target.value })}
-                          placeholder="Enter your name"
-                          maxLength={32}
-                        />
-                      </label>
-                      <p className="arcade-step-hint">
-                        This is the name on the leaderboard and the one Ananse taunts. Leave it blank and you race as
-                        &ldquo;Street Driver&rdquo;.
-                      </p>
-                    </div>
-                  )}
-
-                  {arcadeStep === "race" && (
-                    <>
-                      <div className="arcade-skill-row">
-                        <span className="section-label">Ananse&apos;s pace</span>
-                        <div className="mode-row">
-                          {ANANSE_SKILLS.map(([id, label]) => (
-                            <button
-                              key={id}
-                              type="button"
-                              className={`mode-chip${ananseSkill === id ? " selected" : ""}`}
-                              onClick={() => {
-                                setAnanseSkill(id);
-                                setAnanseLine(
-                                  id === "easy" ? "Cruising? Fine. I'll drive with one hand." :
-                                  id === "hard" ? "Full trickster?! Chale… remember, you asked for this." :
-                                  id === "legend" ? "Unleashed. No more games. I will not wait for you." :
-                                  "Race pace. Now we're talking."
-                                );
-                              }}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                        <p className="arcade-skill-hint">
-                          {ananseSkill === "easy" && "Relaxed pace — he hangs back and rarely boosts. Good for learning the ridge."}
-                          {ananseSkill === "medium" && "He races your pace and keeps it close. Beatable, never free."}
-                          {ananseSkill === "hard" && "No mercy, late braking, boosts on sight. Bring your best laps."}
-                          {ananseSkill === "legend" && "He stops racing you and races the clock — roughly 1:40 for three laps, flat out, every boost spent."}
-                        </p>
-                      </div>
-
-                      <span className="section-label">Circuit</span>
-                      <p className="arcade-track-note">
-                        Ananse only races Akina Ridge for now — the other circuits are coming soon.
-                      </p>
-                      <div className="track-cards">
-                        {TRACK_LIST.map((t) => {
-                          // Arcade launches only on Akina Ridge for now; the rest
-                          // are shown locked so players see what's coming.
-                          const locked = t.id !== ARCADE_TRACK;
-                          return (
-                            <TrackCard
-                              key={t.id}
-                              track={t}
-                              locked={locked}
-                              selected={selectedTrack === t.id}
-                              onSelect={() => {
-                                setTrack(t.id);
-                                setAnanseLine("Akina Ridge. Every hairpin is mine. Come and try.");
-                              }}
-                            />
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-                </section>
-
-                <div className="start-bar">
-                  {step.cta ? (
-                    <button className="primary start-cta" onClick={arcadeNextStep}>{step.cta}</button>
-                  ) : (
-                    <>
-                      <div className="start-summary">
-                        <b>{stats.name}</b><i>·</i><b>{curTrack?.name}</b><i>·</i><b>{ANANSE_SKILL_LABELS[ananseSkill]}</b>
-                      </div>
-                      <button className="primary start-cta arcade-start-cta" onClick={startArcadeRace}>
-                        Race Ananse — {curTrack?.laps || TRACK.laps} laps
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })()}
+        {screen === "arcade" && (
+          <ArcadeSetup
+            driver={driver}
+            setDriver={setDriver}
+            ananseSkill={ananseSkill}
+            setAnanseSkill={setAnanseSkill}
+            onBack={() => setScreen("mode")}
+            onStart={startArcadeRace}
+            onPhoto={handlePhoto}
+          />
+        )}
 
         {screen === "setup" && (() => {
           const curVeh = driver.vehicle || DEFAULT_VEHICLE;
@@ -1637,6 +1358,30 @@ function useReveal() {
   return [ref, shown];
 }
 
+// The four hero stills sit at opacity 0 until their slot in the 40s loop, and a
+// browser only decodes an image when it first has to paint it — so three of the
+// four are decoded mid-crossfade, on the raster thread, while the compositor is
+// animating that very layer. That is why the hero content flickers through the
+// first loop and is perfectly steady on every loop after it. Decoding all four
+// up front removes the first-paint cost from the transitions; one at a time so
+// a slow device isn't spiked with ~1 MB of JPEG at once.
+function useWarmHeroArt() {
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const img of document.querySelectorAll(".hero-art")) {
+        if (cancelled) return;
+        try {
+          await img.decode();
+        } catch {
+          // not loaded yet, or decode() unsupported — the paint path still works
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+}
+
 function FeatureRow({ flip, eyebrow, title, body, media, foot }) {
   const [ref, shown] = useReveal();
   return (
@@ -1662,6 +1407,7 @@ function LandingPage({ challenge, onStart, onArcade, onGuide, onBoard, onFeedbac
   // them. Without it a phone has no top-nav route to anything but Play.
   const [menuOpen, setMenuOpen] = useState(false);
   const { items: rivals, pendingCount } = useRivals();
+  useWarmHeroArt();
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(pbKey()) || "null");

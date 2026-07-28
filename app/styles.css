@@ -199,43 +199,29 @@ button {
   100% { opacity: 1; transform: translateY(0); }
 }
 
-.title-tagline {
-  max-width: 30rem;
-  margin: 14px 0 0;
-  color: #eef3f8;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.5;
-  text-shadow: 0 1px 10px rgba(9, 14, 19, .8);
-}
-
-.title-pill {
-  margin: 14px 0 0;
-  backdrop-filter: blur(10px);
-  background: rgba(9, 15, 22, .62);
-  border: 1px solid rgba(255, 209, 92, .35);
-}
-
-.title-start {
-  width: auto;
-  min-width: 230px;
-  margin-top: 22px;
-  min-height: 54px;
-  font-size: 17px;
-  letter-spacing: .14em;
-  border-radius: 10px;
-  animation: title-fade .55s ease-out both, start-pulse 2.2s ease-in-out 1.6s infinite;
+/* The eye-catcher on the primary CTA. This used to animate box-shadow on the
+   button itself, which is a paint-every-frame property: two of these run
+   forever on the landing page (the hero and the closing CTA), each repainting
+   a 44px blur that spills across the 12px gap onto "How to play" beside it.
+   Driving a pseudo-element's opacity instead is compositor-only — identical
+   glow, no repaint loop, and nothing for a busy first paint to flicker. */
+.hero-start { position: relative; }
+.hero-start::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  /* shadow only, no background — it paints outside the border box, so it can
+     never sit over the label */
+  box-shadow: 0 10px 44px rgba(255, 202, 58, .6);
+  opacity: 0;
+  pointer-events: none;
+  animation: start-pulse 2.4s ease-in-out 1.4s infinite;
 }
 
 @keyframes start-pulse {
-  0%, 100% { box-shadow: 0 10px 34px rgba(255, 202, 58, .25); }
-  50% { box-shadow: 0 10px 44px rgba(255, 202, 58, .6); }
-}
-
-.title-links {
-  display: flex;
-  gap: 22px;
-  margin-top: 12px;
+  0%, 100% { opacity: .3; }
+  50% { opacity: 1; }
 }
 
 .challenge-inbox {
@@ -553,10 +539,18 @@ button {
   overflow: hidden;
 }
 
+/* The hero stacks background → scrim → content. All three used to rely on
+   z-index:auto and DOM order alone, which is correct per spec but leaves the
+   compositor free to re-decide, every time one of the four still layers is
+   created or re-rastered, whether the content above them needs its own layer.
+   While it re-decides, content can paint behind the image — which is what made
+   the CTA buttons flicker and drop out during hero transitions. Explicit
+   z-indexes plus a layer of its own for the content settles it once. */
 .hero-bg {
   position: absolute;
   inset: 0;
   overflow: hidden;
+  z-index: 0;
 }
 .hero-art {
   position: absolute;
@@ -609,11 +603,14 @@ button {
   /* No rotation at all — hold the lead slide, which is now Arcade. */
   .hero-art.is-akina, .hero-art.is-accra, .hero-art.is-orbital, .hero-art.is-arcade { animation: none; }
   .hero-art.is-akina, .hero-art.is-accra, .hero-art.is-orbital { opacity: 0; }
+  /* Hold the CTA glow steady rather than pulsing it. */
+  .hero-start::after { animation: none; opacity: .45; }
 }
 
 .hero-scrim {
   position: absolute;
   inset: 0;
+  z-index: 1;
   background:
     radial-gradient(ellipse 85% 60% at 50% 42%, rgba(7, 11, 18, .35) 0%, rgba(7, 11, 18, .12) 50%, transparent 78%),
     linear-gradient(180deg, rgba(7, 11, 18, .35) 0%, transparent 26% 58%, rgba(12, 17, 25, .96) 100%);
@@ -621,6 +618,11 @@ button {
 
 .hero-inner {
   position: relative;
+  z-index: 2;
+  /* Its own compositor layer, created up front and never reconsidered, so the
+     wordmark and the CTAs are never squashed in with — or behind — the four
+     animating stills underneath. */
+  transform: translateZ(0);
   display: grid;
   justify-items: center;
   max-width: 720px;
@@ -672,7 +674,6 @@ button {
   font-size: 17px;
   letter-spacing: .04em;
   border-radius: 12px;
-  animation: start-pulse 2.4s ease-in-out 1.4s infinite;
 }
 
 .hero-secondary {
@@ -682,6 +683,7 @@ button {
 
 .scroll-cue {
   position: absolute;
+  z-index: 2; /* keeps pace with .hero-inner, which is now explicitly ordered */
   bottom: 22px;
   left: 50%;
   transform: translateX(-50%);
@@ -2442,49 +2444,6 @@ textarea:focus {
   font-weight: 900;
 }
 
-.mode-row {
-  display: flex;
-  gap: 8px;
-}
-
-.mode-chip {
-  flex: 1;
-  padding: 9px 10px;
-  border: 1px solid rgba(255, 255, 255, .2);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .05);
-  color: #cfd8df;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: border-color .12s ease, background .12s ease;
-}
-
-.mode-chip:hover {
-  border-color: rgba(255, 255, 255, .45);
-}
-
-.mode-chip.selected {
-  border-color: #ffd45e;
-  background: rgba(255, 212, 94, .14);
-  color: #ffe6a8;
-}
-
-.car-row {
-  flex-wrap: wrap;
-}
-
-.car-row .mode-chip {
-  flex: 1 1 calc(50% - 8px);
-}
-
-.car-blurb {
-  margin: 8px 2px 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: #9aa6ad;
-}
-
 .share-nudge {
   margin: 14px 0 8px;
   color: #b9c6d8;
@@ -3426,6 +3385,11 @@ kbd {
 .g-left .garage { margin-top: 0; }
 .g-right .section-label:first-child { margin-top: 0; }
 .g-right .track-cards { grid-template-columns: 1fr; }
+/* Content has to be able to scroll clear of the sticky bar, or its last
+   section stays trapped underneath. Padding goes on the content, not on the
+   scroll container — padding there shortens the bar's containing block and
+   stops it reaching the bottom of the viewport at all. */
+.garage-main { padding-bottom: 96px; }
 .garage-inner .start-bar {
   position: sticky; bottom: 0; margin-top: 20px; padding: 14px;
   border-radius: 14px; border: 1px solid rgba(255, 255, 255, .1);
@@ -3774,43 +3738,20 @@ kbd {
   .mode-card-art { height: 150px; }
 }
 
-/* ---- Arcade lobby split layout ---- */
+/* ---- Arcade setup ---------------------------------------------------------
+   Two layouts over one flow (components/ArcadeSetup.jsx): phones step through
+   one question per screen, desktops answer all three on a single board. The
+   through-line in both is that the choices carry the visual weight and the
+   advance control does not — the gradient CTA is spent once, on the start. */
+
 .arcade-lobby-screen { /* inherits .garage-screen */ }
 
-/* The setup wizard stacks by default — opponent first, then the step's own
-   content — so on a phone the order always reads "here is who you're racing,
-   here is what you do next". The old side-by-side grid put the opponent in
-   column one, which collapsed to "giant Ananse on top of everything" and made
-   the step heading look like a label for his portrait. Two columns come back
-   only on step 1, and only when there is genuinely room for them. */
 .arcade-opponent,
 .arcade-step {
   margin-bottom: 16px;
 }
 
-@media (min-width: 900px) {
-  .arcade-lobby-screen .garage-inner:has(.arcade-opponent:not(.compact)) {
-    display: grid;
-    grid-template-columns: 0.85fr 1.15fr;
-    grid-template-areas:
-      "head head"
-      "opp  step"
-      "bar  bar";
-    gap: 0 24px;
-    align-items: start;
-  }
-  .arcade-lobby-screen .garage-inner:has(.arcade-opponent:not(.compact)) > .garage-head { grid-area: head; }
-  .arcade-lobby-screen .garage-inner:has(.arcade-opponent:not(.compact)) > .arcade-opponent { grid-area: opp; }
-  .arcade-lobby-screen .garage-inner:has(.arcade-opponent:not(.compact)) > .arcade-step { grid-area: step; }
-  .arcade-lobby-screen .garage-inner:has(.arcade-opponent:not(.compact)) > .start-bar { grid-area: bar; }
-  /* Side by side there is room for much more of the standing pose, but not all
-     of it: uncapped it runs 563px and pushes his speech bubble underneath the
-     sticky start bar. 380px keeps the column near the step column's height. */
-  .arcade-opponent:not(.compact) .ananse-hero-wrap { max-height: 380px; }
-  .arcade-opponent:not(.compact) .ananse-hero-img { height: 380px; object-position: 50% 22%; }
-}
-
-/* small uppercase label that heads each side of the split */
+/* small uppercase label heading a block */
 .arcade-side-label {
   font-size: 11px;
   font-weight: 800;
@@ -3821,20 +3762,21 @@ kbd {
 }
 .arcade-opponent .arcade-side-label { color: rgba(212,160,23,.75); }
 
-/* ---- Ananse's block (full hero on step 1) ---- */
 .arcade-opponent {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 14px;
-  padding: 18px;
+  padding: 12px 14px;
   background: radial-gradient(120% 90% at 50% 0%, rgba(124,58,237,.14), rgba(0,0,0,.4));
   border-radius: 16px;
   border: 1px solid rgba(212, 160, 23, .28);
   position: relative;
 }
+.arcade-opponent.compact .arcade-side-label { margin-bottom: 8px; }
 
-/* framed hero image of Ananse by his car, with a name plate over the bottom */
+/* framed hero image of Ananse by his car, with a name plate over the bottom.
+   Desktop only now — on a phone it ate the fold before the first question. */
 .ananse-hero-wrap {
   position: relative;
   width: 100%;
@@ -3842,17 +3784,14 @@ kbd {
   overflow: hidden;
   border: 1px solid rgba(212,160,23,.22);
   background: #140a24;
-  /* Capped by default. Stacked above the step's content, a full-height hero
-     pushes the actual controls off the fold — a cropped band still says
-     "this is your opponent". The ≥900px two-column layout lifts the cap. */
-  max-height: 190px;
+  max-height: 380px;
 }
 .ananse-hero-img {
   display: block;
   width: 100%;
-  height: 190px;
+  height: 380px;
   object-fit: cover;
-  object-position: 50% 16%;
+  object-position: 50% 20%;
 }
 .ananse-hero-plate {
   position: absolute;
@@ -3880,7 +3819,7 @@ kbd {
   margin-top: 3px;
 }
 
-/* Speech bubble in lobby — sits under the hero, tail pointing up-left */
+/* Speech bubble in the lobby — tail pointing up-left */
 .ananse-lobby-bubble {
   background: rgba(20, 10, 0, .78);
   border: 1px solid rgba(212, 160, 23, .4);
@@ -3903,29 +3842,19 @@ kbd {
   border-bottom-color: rgba(212, 160, 23, .4);
 }
 
-/* ---- Compact opponent strip, used on steps 2+ ---- */
-.arcade-opponent.compact {
-  padding: 12px 14px;
-}
-.arcade-opponent.compact .arcade-side-label { margin-bottom: 8px; }
-
+/* ---- Compact opponent strip ---- */
 .ananse-strip {
   display: flex;
   align-items: center;
   gap: 12px;
 }
-
-.ananse-strip-text {
-  min-width: 0;
-}
-
+.ananse-strip-text { min-width: 0; }
 .ananse-strip-text b {
   display: block;
   font-size: 13px;
   color: #ffe8a1;
   letter-spacing: .02em;
 }
-
 .ananse-strip-text span {
   display: block;
   font-size: 12.5px;
@@ -3934,7 +3863,7 @@ kbd {
   color: rgba(244, 240, 230, .78);
 }
 
-/* ---- The step the player is actually on ---- */
+/* ---- The step the player is on ---- */
 .arcade-step {
   display: flex;
   flex-direction: column;
@@ -3959,20 +3888,23 @@ kbd {
   color: rgba(240, 192, 64, .8);
 }
 
+/* Dots double as back-navigation to any step already reached. */
 .arcade-step-dots {
   display: inline-flex;
   gap: 5px;
 }
-
-.arcade-step-dots i {
-  width: 7px;
-  height: 7px;
+.arcade-step-dots button {
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  border: 0;
   border-radius: 50%;
   background: rgba(255, 255, 255, .18);
+  cursor: pointer;
 }
-
-.arcade-step-dots i.done { background: rgba(240, 192, 64, .45); }
-.arcade-step-dots i.on   { background: #f0c040; }
+.arcade-step-dots button:disabled { cursor: default; }
+.arcade-step-dots button.done { background: rgba(240, 192, 64, .45); }
+.arcade-step-dots button.on   { background: #f0c040; }
 
 .arcade-step-title {
   margin: 0;
@@ -3990,7 +3922,6 @@ kbd {
   color: rgba(244, 240, 230, .72);
 }
 
-/* note above the arcade track picker explaining the single available circuit */
 .arcade-track-note {
   font-size: 12.5px;
   color: rgba(240,192,64,.85);
@@ -3998,7 +3929,7 @@ kbd {
   border: 1px solid rgba(240,192,64,.22);
   border-radius: 8px;
   padding: 8px 12px;
-  margin: 0 0 12px;
+  margin: 12px 0 0;
   line-height: 1.4;
 }
 
@@ -4033,67 +3964,287 @@ kbd {
   padding: 5px 12px;
 }
 
-.garage-hero-sm { height: 160px; }
+/* ---- Question 1: the ride ---- */
+.pick-ride { display: flex; flex-direction: column; gap: 12px; }
+.pick-ride .car-cards { margin-top: 0; grid-template-columns: repeat(2, 1fr); }
 
-/* "Race Ananse" start button — tricolor gradient */
+.ride-preview {
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.03);
+  overflow: hidden;
+}
+.ride-preview-stage { height: 180px; position: relative; }
+.ride-preview-info { padding: 12px 14px 14px; }
+.ride-preview-info h4 { margin: 2px 0 10px; font-size: 18px; color: #f4f7fa; }
+
+/* Placeholder bay before a pick. A preview of a car nobody chose is what made
+   the old default read as a decision already taken. */
+.ride-empty {
+  height: 180px;
+  border-radius: 14px;
+  border: 1px dashed rgba(255,255,255,.18);
+  background: rgba(255,255,255,.02);
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  text-align: center;
+}
+.ride-empty-mark { font-size: 32px; color: rgba(255,207,66,.35); line-height: 1; }
+.ride-empty p { margin: 0; font-size: 12.5px; color: rgba(196,210,222,.7); }
+
+/* ---- Question 3: his pace ----
+   Full-width rows, not chips: each tier gets its description and his measured
+   three-lap time, so the choice is made on evidence rather than on adjectives. */
+.pace-rows { display: flex; flex-direction: column; gap: 8px; }
+.pace-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  text-align: left;
+  cursor: pointer;
+  color: #dce6ef;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.1);
+  transition: .15s;
+}
+.pace-row:hover { background: rgba(255,255,255,.08); }
+.pace-row.selected {
+  border-color: #ffcf42;
+  background: linear-gradient(rgba(255,180,40,.12), rgba(255,180,40,.05));
+  box-shadow: 0 0 0 1px #ffcf42 inset;
+}
+.pace-row-main { flex: 1; min-width: 0; }
+.pace-row-main b {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #f4f7fa;
+}
+.pace-row-main > span {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #9fb0c0;
+}
+.pace-tag {
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #0d1420;
+  background: rgba(255,207,66,.85);
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+.pace-row-clock { flex: 0 0 auto; text-align: right; }
+.pace-row-clock b {
+  display: block;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  color: #ffcf42;
+}
+.pace-row-clock i {
+  display: block;
+  font-style: normal;
+  font-size: 9.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #7f8fa0;
+}
+
+/* ---- The grid: last screen, and the only gradient button in the flow ---- */
+.grid-card {
+  border-radius: 16px;
+  border: 1px solid rgba(212,160,23,.3);
+  background: radial-gradient(120% 90% at 50% 0%, rgba(124,58,237,.16), rgba(0,0,0,.4));
+  padding: 16px;
+}
+.grid-vs {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+}
+.grid-side { display: grid; justify-items: center; gap: 4px; text-align: center; min-width: 0; }
+.grid-side b { font-size: 14px; color: #f4f7fa; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grid-side span { font-size: 11.5px; color: #9fb0c0; }
+.grid-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #ffcf42;
+  margin-bottom: 4px;
+}
+.grid-avatar-blank {
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  font-weight: 800;
+  color: #ffcf42;
+  background: rgba(255,207,66,.12);
+}
+.grid-avatar-ananse { margin-bottom: 4px; }
+.grid-vs-mark {
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: .1em;
+  color: rgba(255,255,255,.45);
+}
+
+.grid-lines { list-style: none; margin: 16px 0 0; padding: 0; }
+.grid-lines li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid rgba(255,255,255,.08);
+  font-size: 12.5px;
+}
+.grid-lines li span { color: #9fb0c0; }
+.grid-lines li b { color: #f4f7fa; }
+.grid-edit { justify-content: flex-start !important; gap: 16px !important; }
+.grid-edit button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #ffcf42;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.grid-card .ananse-lobby-bubble { margin-top: 14px; }
+
+/* ---- Advance control ----
+   Deliberately quiet: a bar the player can find, not a target they hit on the
+   way past. Disabled it says what is still missing instead of only dimming. */
+.step-next {
+  width: 100%;
+  background: rgba(255, 207, 66, .16);
+  border: 1px solid rgba(255, 207, 66, .55);
+  color: #ffd97a;
+  box-shadow: none;
+  font-weight: 800;
+}
+.step-next:hover { background: rgba(255, 207, 66, .24); box-shadow: none; }
+.step-next:disabled {
+  opacity: 1;
+  background: rgba(255, 255, 255, .04);
+  border-color: rgba(255, 255, 255, .12);
+  color: rgba(196, 210, 222, .6);
+}
+.step-skip {
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 4px 0 0;
+  font-size: 12.5px;
+  color: #9fb0c0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.step-skip:hover { color: #dce6ef; }
+
 .arcade-start-cta {
   background: linear-gradient(90deg, #b8060f 0%, #d4a017 50%, #1a6b2a 100%) !important;
   letter-spacing: .05em;
   font-weight: 800;
 }
+.arcade-start-cta:disabled {
+  background: rgba(255, 255, 255, .06) !important;
+  color: rgba(196, 210, 222, .65);
+  opacity: 1;
+}
 
-/* ---- In-race Ananse HUD speech bubble ---- */
-/* Sits upper-left, just above the vertical middle: the racing sightline runs
-   from the car (bottom-centre) up the road to the horizon, and apexes appear
-   low-left/low-right — this height is empty scenery, clear of the stats bar
-   (top-centre), minimap (top-right), speedo and boost (bottom corners), and
-   the mobile thumb zone. */
-.ananse-hud-bubble {
-  position: fixed;
-  top: 32%;
-  left: 16px;
+/* ---- Desktop board: three questions at once, one gated start ---- */
+.arcade-desk {
+  display: grid;
+  grid-template-columns: 0.8fr 1.05fr 1.05fr;
+  gap: 22px;
+  align-items: start;
+}
+.ad-opponent { min-width: 0; }
+.ad-col { min-width: 0; display: flex; flex-direction: column; }
+.ad-q {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  z-index: 60;
-  pointer-events: none;
-  animation: bubble-in .3s ease;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: rgba(240, 192, 64, .85);
 }
-
-.ananse-speech-bubble {
-  background: rgba(10, 6, 0, .88);
-  border: 1.5px solid #d4a017;
-  border-radius: 4px 12px 12px 12px;
-  padding: 10px 14px;
-  max-width: 240px;
-  font-size: 13px;
-  color: #f4ead0;
-  font-style: italic;
-  line-height: 1.45;
-  box-shadow: 0 4px 20px rgba(0,0,0,.5);
+.ad-q:not(:first-child) { margin-top: 20px; }
+.ad-q i {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  font-style: normal;
+  font-size: 11px;
+  color: #2a1a05;
+  background: #ffcf42;
 }
+.ad-col .identity-card { margin-bottom: 0; }
+.arcade-desk .pick-ride .car-cards { grid-template-columns: repeat(2, 1fr); }
 
-@keyframes bubble-in {
-  from { opacity: 0; transform: translateY(-8px) scale(.96); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+.arcade-desk-bar { align-items: center; }
+/* The gate, spelled out: three requirements that tick over as they're met, so
+   an unfinished setup names what it's waiting for. */
+.ad-check {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
+.ad-check li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: rgba(196, 210, 222, .6);
+}
+.ad-check li b { font-size: 13px; color: rgba(255, 255, 255, .3); }
+.ad-check li.on { color: #f4f7fa; }
+.ad-check li.on b { color: #6ff0a0; }
+.arcade-desk-bar .start-cta { flex: 0 0 auto; width: auto; min-width: 260px; }
 
-/* ---- Responsive: arcade lobby on small screens ---- */
+/* ---- Responsive ---- */
 @media (max-width: 680px) {
-  /* On a phone the hero eats the screen and pushes the step's own controls
-     below the fold, so crop it hard: the point of step 1's hero is to say
-     "this is your opponent", which a 190px band does perfectly well. */
-  .arcade-opponent { padding: 14px; }
-  /* Put the picker directly under the step heading and demote the 339px
-     preview to confirmation below it. Preview-then-picker costs a full screen
-     of scrolling before the player can act on what the heading just asked. */
-  .arcade-step-head { order: -2; }
-  .arcade-step .car-cards { order: -1; }
+  .arcade-opponent { padding: 12px 14px; }
   /* phones: a touch higher — the viewport is shorter and the thumb controls
      own the bottom half */
   .ananse-hud-bubble { top: 27%; left: 10px; }
   .ananse-speech-bubble { max-width: 180px; font-size: 12px; }
 }
+
+/* The stepper's start bar stacks its skip link under the advance control. */
+.arcade-lobby-screen .start-bar { flex-direction: column; align-items: stretch; }
+.arcade-lobby-screen .arcade-desk-bar { flex-direction: row; align-items: center; }
+
+/* The start bar is sticky, so content above it scrolls underneath — which is
+   how the old flow ended up with two car cards permanently hidden behind the
+   CTA. Padding on the step (not on the scroll container, which would shorten
+   the bar's containing block and unpin it) lets every step scroll clear. */
+.arcade-lobby-screen .arcade-step,
+.arcade-lobby-screen .arcade-desk { padding-bottom: 96px; }
 
 /* ---- Arcade finish: verdict vs Ananse ---- */
 .arcade-verdict {
@@ -4192,26 +4343,6 @@ kbd {
 
 .pace-step-up:hover { background: rgba(240, 192, 64, .28); }
 .pace-report:hover  { background: rgba(255, 255, 255, .12); }
-
-/* ---- Arcade difficulty selector ---- */
-.arcade-skill-row {
-  margin-bottom: 16px;
-}
-
-.arcade-skill-row .section-label {
-  display: block;
-  margin-bottom: 8px;
-}
-
-.arcade-skill-hint {
-  margin: 8px 0 0;
-  font-size: 12.5px;
-  line-height: 1.45;
-  /* solid colour rather than opacity — the panel is translucent and the scene
-     behind it was showing straight through the dimmed text */
-  color: rgba(244, 240, 230, .72);
-  font-style: italic;
-}
 
 /* Narrow viewports, whatever the input device. The overlay is sized in
    absolutes, so without this the time collides with the map on a phone-width

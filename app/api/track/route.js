@@ -10,6 +10,14 @@ const ALLOWED_EVENTS = new Set([
   "share_sms",
   "share_copy",
   "feedback_sent",
+  // Arcade funnel. These were being logged from the client but never allowed
+  // through, so every arcade counter read zero.
+  "arcade_race_started",
+  "arcade_skill_stepped_up",
+  // Did the player actually pick a pace this session, or carry one over?
+  "arcade_pace_chosen",
+  "arcade_setup_named",
+  "arcade_setup_anon",
 ]);
 
 // Fire-and-forget funnel counter. Always answers 204 — analytics must never
