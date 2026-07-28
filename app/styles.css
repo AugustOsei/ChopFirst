@@ -3429,6 +3429,266 @@ kbd {
 }
 .race-loading p { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #9fb0c0; }
 
+/* ---- Versus intro: the arcade fight card ----------------------------------
+   Two diagonal plates slam in from the edges, hit in the middle, and VS stamps
+   over the seam. The split is clip-path rather than a pair of skewed halves so
+   the portraits and type stay upright inside an angled frame. Every timing here
+   is mirrored by FULL_MS in components/VersusIntro.jsx — move one, move both. */
+.vs-intro {
+  position: absolute;
+  inset: 0;
+  z-index: 40; /* over the race canvas and the loading overlay (30) */
+  overflow: hidden;
+  cursor: pointer;
+  background: radial-gradient(120% 90% at 50% 45%, #1a1030 0%, #05070d 70%);
+  animation: vs-out .3s ease-in 1.5s both;
+}
+
+.vs-shake {
+  position: absolute;
+  inset: 0;
+  animation: vs-shake .22s ease-out .38s 2;
+}
+
+.vs-side {
+  position: absolute;
+  inset: 0;
+}
+.vs-side-player {
+  clip-path: polygon(0 0, 56% 0, 44% 100%, 0 100%);
+  background: linear-gradient(120deg, rgba(0, 0, 0, .55), color-mix(in srgb, var(--accent) 26%, #05070d));
+  animation: vs-slam-left .42s cubic-bezier(.16, .9, .3, 1.35) both;
+}
+.vs-side-ananse {
+  clip-path: polygon(56% 0, 100% 0, 100% 100%, 44% 100%);
+  background: linear-gradient(240deg, rgba(0, 0, 0, .55), rgba(124, 58, 237, .42));
+  animation: vs-slam-right .42s cubic-bezier(.16, .9, .3, 1.35) both;
+}
+/* The plates are full-bleed so their diagonals meet, so the content has to be
+   placed at the centre of each plate's visible wedge — a quarter and three
+   quarters across the viewport. Anchored with left/translate, not a percentage
+   translate on its own: a percentage transform resolves against the element's
+   own width, which drags both blocks into the middle and overlaps the names. */
+.vs-side-inner {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(42%, 400px);
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  text-align: center;
+}
+.vs-side-player .vs-side-inner { left: 25%; }
+.vs-side-ananse .vs-side-inner { left: 75%; }
+
+.vs-portrait {
+  width: clamp(96px, 24vw, 190px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 4px solid #ffcf42;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: #10141c;
+  box-shadow: 0 0 0 6px rgba(0, 0, 0, .45), 0 18px 50px rgba(0, 0, 0, .6);
+  animation: vs-portrait-in .42s cubic-bezier(.16, .9, .3, 1.35) both;
+}
+.vs-portrait img { width: 100%; height: 100%; object-fit: cover; }
+.vs-portrait-ananse { border-color: #a06bff; }
+.vs-initial {
+  font-size: clamp(40px, 10vw, 84px);
+  font-weight: 900;
+  font-style: italic;
+  line-height: 1;
+}
+
+.vs-plate {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  animation: vs-plate-in .3s ease-out .72s both;
+}
+.vs-plate b {
+  font-size: clamp(19px, 5vw, 38px);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: .01em;
+  text-transform: uppercase;
+  color: #f7fafc;
+  text-shadow: 0 3px 14px rgba(0, 0, 0, .8);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vs-plate span {
+  font-size: clamp(9px, 2.2vw, 12px);
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, .7);
+}
+.vs-plate i {
+  margin-top: 5px;
+  font-style: normal;
+  font-size: clamp(10px, 2.4vw, 13px);
+  font-weight: 700;
+  color: #ffcf42;
+  border: 1px solid rgba(255, 207, 66, .4);
+  border-radius: 999px;
+  padding: 3px 11px;
+}
+
+/* The lightning seam down the join. Clipped from the same polygon geometry as
+   the two plates rather than drawn as a rotated bar: the seam's angle depends
+   on the viewport's aspect ratio (about 11° on a desktop, 3° on a phone), so a
+   fixed rotation only ever lines up at one size. drop-shadow, not box-shadow —
+   a box-shadow would be clipped away with the rest of the box. */
+.vs-seam {
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(55.9% 0, 57.3% 0, 45.3% 100%, 43.9% 100%);
+  background: linear-gradient(180deg, transparent, #ffb020 16%, #fff3c4 50%, #ffb020 84%, transparent);
+  filter: drop-shadow(0 0 16px rgba(255, 176, 32, .9));
+  transform-origin: 50% 50%;
+  animation: vs-seam-in .5s ease-out .34s both;
+}
+
+.vs-eyebrow {
+  position: absolute;
+  top: clamp(24px, 7vh, 70px);
+  left: 0;
+  right: 0;
+  z-index: 2;
+  margin: 0;
+  text-align: center;
+  font-size: clamp(10px, 2.4vw, 13px);
+  font-weight: 800;
+  letter-spacing: .34em;
+  text-transform: uppercase;
+  color: rgba(255, 207, 66, .82);
+  animation: vs-plate-in .3s ease-out .8s both;
+}
+
+.vs-mark {
+  position: absolute;
+  /* a touch above centre: the portraits sit above the block's midline, so a
+     dead-centre mark lands on the name plates instead of between the faces */
+  top: 45%;
+  left: 50%;
+  font-size: clamp(76px, 21vw, 190px);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: -.04em;
+  line-height: 1;
+  color: #ffcf42;
+  text-shadow:
+    0 0 30px rgba(255, 176, 32, .75),
+    0 6px 0 rgba(120, 60, 0, .55),
+    0 12px 40px rgba(0, 0, 0, .85);
+  animation: vs-stamp .34s cubic-bezier(.2, 1.5, .4, 1) .4s both;
+}
+
+/* The hit itself. */
+.vs-flash {
+  position: absolute;
+  inset: 0;
+  background: #fff6df;
+  opacity: 0;
+  pointer-events: none;
+  animation: vs-flash .26s ease-out .38s both;
+}
+
+.vs-skip {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2;
+  border: 1px solid rgba(255, 255, 255, .22);
+  background: rgba(6, 10, 16, .6);
+  color: #cfd8df;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  animation: title-fade .3s ease-out .9s both;
+}
+
+@keyframes vs-slam-left {
+  0%   { transform: translateX(-105%); }
+  100% { transform: translateX(0); }
+}
+@keyframes vs-slam-right {
+  0%   { transform: translateX(105%); }
+  100% { transform: translateX(0); }
+}
+@keyframes vs-portrait-in {
+  0%   { transform: scale(1.35); opacity: .2; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes vs-stamp {
+  0%   { transform: translate(-50%, -50%) scale(3.4) rotate(-16deg); opacity: 0; }
+  100% { transform: translate(-50%, -50%) scale(1) rotate(-7deg); opacity: 1; }
+}
+@keyframes vs-seam-in {
+  0%   { transform: scaleY(0); opacity: 0; }
+  40%  { transform: scaleY(1); opacity: 1; }
+  100% { transform: scaleY(1); opacity: .7; }
+}
+@keyframes vs-fade-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes vs-flash {
+  0%   { opacity: 0; }
+  25%  { opacity: .8; }
+  100% { opacity: 0; }
+}
+@keyframes vs-shake {
+  0%, 100% { transform: translate(0, 0); }
+  25%      { transform: translate(-7px, 3px); }
+  50%      { transform: translate(6px, -3px); }
+  75%      { transform: translate(-4px, -2px); }
+}
+@keyframes vs-plate-in {
+  0%   { transform: translateY(14px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+@keyframes vs-out {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Phones: the two wedges are close enough that the VS glyph lands on the
+   portraits and the player's name, so push the blocks outward and shrink it. */
+@media (max-width: 620px) {
+  .vs-side-inner { width: 40%; }
+  .vs-side-player .vs-side-inner { left: 22%; }
+  .vs-side-ananse .vs-side-inner { left: 78%; }
+  .vs-mark { font-size: clamp(52px, 15vw, 90px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Same card, no slam: everything arrives in place and holds. VersusIntro
+     shortens its timer to match (REDUCED_MS). */
+  .vs-intro { animation: vs-out .25s ease-in .65s both; }
+  .vs-eyebrow { animation: none; }
+  .vs-shake,
+  .vs-flash { animation: none; }
+  .vs-flash { opacity: 0; }
+  .vs-side-player,
+  .vs-side-ananse,
+  .vs-portrait,
+  .vs-plate,
+  .vs-seam { animation: none; }
+  /* vs-fade-in, not title-fade: title-fade animates translateY, which would
+     overwrite the transform that centres the mark on the seam. */
+  .vs-mark { animation: vs-fade-in .3s ease-out both; transform: translate(-50%, -50%) rotate(-7deg); }
+  .vs-skip { animation: none; }
+}
+
 /* Sponsor interstitial variant: countdown + progress ride a slim top bar,
    the portrait creative sits contained on a solid deep-space card — one
    asset works in both portrait (mobile) and landscape (desktop) stages. */

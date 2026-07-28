@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import RaceGame from "../components/RaceGame";
 import ArcadeSetup from "../components/ArcadeSetup";
+import VersusIntro from "../components/VersusIntro";
 import GuideModal from "../components/GuideModal";
 import FeedbackModal from "../components/FeedbackModal";
 import ChangelogModal from "../components/ChangelogModal";
@@ -185,6 +186,8 @@ export default function Home() {
   const [ad, setAd] = useState(null);
   const [adSecondsLeft, setAdSecondsLeft] = useState(0);
   const skipAdRef = useRef(false);
+  // Arcade only: the versus card plays before the ad, and holds back the mount.
+  const [versus, setVersus] = useState(false);
   const [timeOfDay, setTimeOfDayState] = useState("day");
   const [challengeId, setChallengeId] = useState("");
   const [challenge, setChallenge] = useState(null);
@@ -328,6 +331,11 @@ export default function Home() {
   function startArcadeRace() {
     setArcadeMode(true);
     logEvent("arcade_race_started");
+    // Only the deliberate starts — the setup's last button and the finish
+    // screen's rematch. The in-race restart bumps raceKey instead and stays on
+    // the fast path; someone hammering restart mid-session wants the road back,
+    // not a title card.
+    setVersus(true);
     setResult(null);
     setRaceReady(false);
     setMountRace(false);
@@ -353,8 +361,14 @@ export default function Home() {
       setRaceReady(false);
       setAd(null);
       setAdSecondsLeft(0);
+      setVersus(false);
       return;
     }
+    // Arcade opens on the fight card. Nothing else may start while it runs —
+    // not the ad, and above all not the mount, because RaceGame begins its
+    // 3-2-1 on the scene's first rendered frame and anything covering that
+    // moment eats the lights. VersusIntro clears the flag and this re-runs.
+    if (versus) return;
     setRaceReady(false);
     setMountRace(false);
 
@@ -387,7 +401,7 @@ export default function Home() {
       }
     }, 1000);
     return () => clearInterval(tick);
-  }, [screen, raceKey]);
+  }, [screen, raceKey, versus]);
 
   function finishRace(run) {
     // Arcade runs live in their own world: no PB write (they'd overwrite the
@@ -593,7 +607,16 @@ export default function Home() {
                 }}
               />
             )}
-            {(!raceReady || adSecondsLeft > 0) && <RaceLoading ad={ad} secondsLeft={adSecondsLeft} />}
+            {versus ? (
+              <VersusIntro
+                driver={driver}
+                carName={vehicleStats(driver.vehicle || DEFAULT_VEHICLE).name}
+                paceLabel={ANANSE_SKILL_LABELS[ananseSkill]}
+                onDone={() => setVersus(false)}
+              />
+            ) : (
+              (!raceReady || adSecondsLeft > 0) && <RaceLoading ad={ad} secondsLeft={adSecondsLeft} />
+            )}
           </>
         ) : screen === "setup" || screen === "arcade" || screen === "mode" ? null : (
           <IntroBackdrop variant="panel" />
